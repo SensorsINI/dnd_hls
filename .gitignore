@@ -1,0 +1,7 @@
+vivado_hls.log
+*~
+**/syn
+**/.autopilot
+**/csim
+**/sim
+**/impl
