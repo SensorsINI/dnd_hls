@@ -1,7 +1,8 @@
 #include <stdio.h>
 #include <string.h>
-
+#include <unistd.h>
 #include "dnd_create_mlp_activation.hpp"
+#include "mlp/myproject.h"
 
 #define SPIKE_COUNT 100
 // Events captured from the DVS.
@@ -14,9 +15,12 @@ const char * soft_activation_file_path = "/home/arios/Projects/dvs_denoising/dnd
 int main() {
 
 	printf("Starting the test to read the Temporal Image and create the activations for the MLP \n");
+	char cwd[1024];
+	getcwd(cwd, sizeof(cwd));
+	printf("Current working dir: %s\n", cwd);
 
 	printf("Create the Timestamp Image (TI)\n");
-	timestamp_image_data_t timestamp_image[DVS_WIDTH * DVS_HEIGHT];
+	timestamp_polarity_image_data_t timestamp_image[DVS_WIDTH * DVS_HEIGHT];
 //	for(int idx=0; idx<DVS_WIDTH*DVS_HEIGHT; idx++){
 //		timestamp_image[idx] = 0;
 //	}
@@ -41,6 +45,9 @@ int main() {
 	mlp_input_activation_t mlp_activations[MLP_INPUT_NEURONS];
 	char *token;
 	const char delimiter[2] = " ";
+	unsigned short size_in;
+	unsigned short size_out;
+	result_t mlp_out[N_LAYER_5];
 	for (int s_id = 0; s_id < SPIKE_COUNT; s_id++) {
 		// Get timestamp
 		token = strtok(line, delimiter);
@@ -60,6 +67,9 @@ int main() {
 				s_id, current_time.to_uint(), x, y, pol, caviar_data.to_uint());
 
 		dnd_create_mlp_activation(caviar_data, timestamp_image, current_time, mlp_activations);
+
+		myproject(mlp_activations, mlp_out, size_in, size_out);
+
 		printf("Processed\n");
 
 		// Write the activation into the output file
@@ -70,6 +80,7 @@ int main() {
 				fprintf(activation_f, "%f ", mlp_activations[idx].to_float());
 			}
 		}
+		fprintf(activation_f, "%f", mlp_out[0].to_float());
 		fprintf(activation_f, "\n");
 
 		// Get next spike
