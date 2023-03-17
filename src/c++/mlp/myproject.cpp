@@ -23,7 +23,8 @@
 
 void myproject(
     input_t inputlayer_[N_INPUT_1_1],
-    result_t layer8_out[N_LAYER_6],
+//    result_t layer8_out[N_LAYER_6],
+	result_t layer6_out[N_LAYER_6],
     unsigned short &const_size_in_1,
     unsigned short &const_size_out_1
 ) {
@@ -67,10 +68,10 @@ void myproject(
     #pragma HLS ARRAY_PARTITION variable=layer5_out complete dim=0
     nnet::relu<layer3_t, layer5_t, relu_config5>(layer3_out, layer5_out); // relu1
 
-    layer6_t layer6_out[N_LAYER_6];
+//    layer6_t layer6_out[N_LAYER_6];
     #pragma HLS ARRAY_PARTITION variable=layer6_out complete dim=0
     nnet::dense<layer5_t, layer6_t, config6>(layer5_out, layer6_out, w6, b6); // fc2
 
-    nnet::sigmoid<layer6_t, result_t, sigmoid_config8>(layer6_out, layer8_out); // output
+//    nnet::sigmoid<layer6_t, result_t, sigmoid_config8>(layer6_out, layer8_out); // output
 
 }
