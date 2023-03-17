@@ -4,11 +4,11 @@
 void dnd_create_mlp_activation(
 		caviar_data_t caviar_spike,
 		timestamp_polarity_image_data_t timestamp_polarity_image[DVS_WIDTH * DVS_HEIGHT], 	//TODO change the memory access using @Min memory layout
+//		timestamp_polarity_image_data_t timestamp_polarity_image[DVS_WIDTH][DVS_HEIGHT/COMBINED_SPIKES],
 		timestamp_t current_timestamp,
 		mlp_input_activation_t mlp_activation[MLP_INPUT_NEURONS]
 		) {
-#pragma HLS PIPELINE
-
+#pragma HLS DATAFLOW
 #ifdef VERBOSE
 	printf("Get the spike column, row and pol from the caviar input\n");
 #endif
@@ -19,7 +19,7 @@ void dnd_create_mlp_activation(
 	polarity_t spike_pol = (caviar_spike.range(0, 0) == 1) ? 1 : -1; 			//MLP polarity: 0-> No or old spike; 1-> ON; -1-> OFF
 
 	// Set some useful variables
-	timestamp_polarity_image_data_t timestamp_polarity_patch[NNb_TI_PATCH_WIDTH*NNb_TI_PATCH_WIDTH];
+	timestamp_polarity_data_t timestamp_polarity_patch[NNb_TI_PATCH_WIDTH*NNb_TI_PATCH_WIDTH];
 	uint TI_addr, PATCH_addr;
 	int patch_border = NNb_TI_PATCH_WIDTH >> 1;
 	int spike_surround_y = spike_y - patch_border;
@@ -29,9 +29,13 @@ void dnd_create_mlp_activation(
 	timestamp_diff_t ts_diff;
 	int ts_tau_diff = current_timestamp - TAU;
 	int act_idx = 0;
-	timestamp_polarity_image_data_t ts_pol;
+	timestamp_polarity_data_t ts_pol;
 	timestamp_t patch_ts;
 	polarity_t patch_pol;
+
+	timestamp_polarity_image_data_t *whole_colum;
+	timestamp_polarity_image_data_t combined_spike, combined_spike_next;
+	int spike_combined_idx, t_p_idx, t_p_start_bit, t_p_end_bit;
 
 #ifdef VERBOSE
 	printf("Read the NNb_TI_patch (Timestamp:Polarity) from the Timestamp Image.\n");
@@ -52,6 +56,33 @@ void dnd_create_mlp_activation(
 #endif
 		}
 	}
+//	read_col_NNb_TI_patch: for(int patch_x=0; patch_x<NNb_TI_PATCH_WIDTH; patch_x++){
+//#pragma HLS UNROLL
+//		spike_combined_idx = spike_surround_y >> 5;														// Get the index of the combined spike where the first patch pixel belongs
+//		combined_spike = timestamp_polarity_image[spike_surround_x+patch_x][spike_combined_idx];		// Get the combined spike data
+//		combined_spike_next = timestamp_polarity_image[spike_surround_x+patch_x][spike_combined_idx+1];	// Get the next combined spike data
+//		t_p_idx = spike_surround_y % COMBINED_SPIKES;													// Get index of the ts_pol data inside of the combined spike
+//
+//		read_row_NNb_TI_patch: for(int patch_y=0; patch_y<NNb_TI_PATCH_WIDTH; patch_y++){
+//#pragma HLS UNROLL
+//			PATCH_addr 		= patch_x * NNb_TI_PATCH_WIDTH + patch_y;  									// Calculate the address of the patch for the current ts_pol data (Read column first)
+//			t_p_start_bit 	= t_p_idx * (TIMESTAMP_POLARITY_DATA_BITS);									// Get the LSB of the ts_pol data
+//			t_p_end_bit 	= t_p_start_bit + TIMESTAMP_POLARITY_DATA_BITS - 1;							// Get the MSB of the ts_pol data
+//			ts_pol 			= combined_spike.range(t_p_end_bit, t_p_start_bit);							// Get the ts_pol data from the combined spike
+//
+//			timestamp_polarity_patch[PATCH_addr] = ts_pol;												// Store the ts_pol data in the patch
+//			if(t_p_idx + patch_y == COMBINED_SPIKES - 1){												// Check if the combined spike limit is reached
+//				combined_spike = combined_spike_next;													// Update the combined spike with the next one
+//				t_p_idx = 0;																			// Reset the index of the ts_pol data to zero
+//			}else{
+//				t_p_idx++;																				// Point to the next ts_pol data inside of the combined spike
+//			}
+//#ifdef VERBOSE
+////			printf("\t NNb_TI_patch[%u] <-- TI[%u] TI_value: %u\n",	PATCH_addr, TI_addr, ts_pol.to_uint());
+//			printf("\t NNb_TI_patch[%u] <-- TPI_value: %u\n",	PATCH_addr, ts_pol.to_uint());
+//#endif
+//		}
+//	}
 
 #ifdef VERBOSE
 	printf("Create activation array for the MLP.\n");
@@ -62,7 +93,7 @@ void dnd_create_mlp_activation(
 #pragma HLS UNROLL
 		// Get the timestamp_pol data from the patch
 		ts_pol = timestamp_polarity_patch[act_idx];
-		patch_ts = ts_pol.range(TIMESTAMP_POLARITY_IMAGE_DATA_BITS-1, POLARITY_BITS);
+		patch_ts = ts_pol.range(TIMESTAMP_POLARITY_DATA_BITS-1, POLARITY_BITS);
 		patch_pol = ts_pol.range(POLARITY_BITS-1, 0);
 
 		if(patch_ts < ts_tau_diff){
@@ -78,7 +109,7 @@ void dnd_create_mlp_activation(
 
 #ifdef VERBOSE
 		printf("\t Mapping the age of NNb_TI_patch_pixel #%u into Neuron #%u: Calculating the age... Tx,y: %u, Te: %u, Tau: %d --> Age: %f\n",
-						act_idx, act_idx, ts_pol.range(TIMESTAMP_POLARITY_IMAGE_DATA_BITS-1, POLARITY_BITS).to_uint(), current_timestamp.to_uint(), TAU, age.to_float());
+						act_idx, act_idx, ts_pol.range(TIMESTAMP_POLARITY_DATA_BITS-1, POLARITY_BITS).to_uint(), current_timestamp.to_uint(), TAU, age.to_float());
 #endif
 
 		// For the incoming event take its polarity, otherwise get the polarity from the TI
@@ -95,11 +126,25 @@ void dnd_create_mlp_activation(
 #endif
 	}
 
-	// Update the TI with the current event
+	// Update the TPI with the current event
 	timestamp_polarity_image_data_t timestamp_polarity;
 	timestamp_polarity.range(timestamp_polarity.width-1, POLARITY_BITS)= current_timestamp;
 	timestamp_polarity.range(POLARITY_BITS-1, 0) = spike_pol;
 	timestamp_polarity_image[spike_y * DVS_WIDTH + spike_x] = timestamp_polarity;
+
+//	// Update the TPI with the current event
+//	timestamp_polarity_data_t timestamp_polarity;
+//	timestamp_polarity.range(timestamp_polarity.width-1, POLARITY_BITS)	= current_timestamp;
+//	timestamp_polarity.range(POLARITY_BITS-1, 0) 						= spike_pol;
+//
+//	spike_combined_idx 		= spike_y >> 5;																// Get the index of the combined spike where the current spike pixel belongs
+//	combined_spike 			= timestamp_polarity_image[spike_x][spike_combined_idx];					// Get the combined spike data
+//	t_p_idx				   	= spike_y % COMBINED_SPIKES;												// Get index of the ts_pol data inside of the combined spike
+//	t_p_start_bit 			= t_p_idx * (TIMESTAMP_POLARITY_DATA_BITS);									// Get the LSB of the timestamp_polarity data
+//	t_p_end_bit 			= t_p_start_bit + TIMESTAMP_POLARITY_DATA_BITS -1;							// Get the MSB of the timestamp_polarity data
+//
+//	combined_spike.range(t_p_end_bit, t_p_start_bit)	= timestamp_polarity;							// Store the ts_pol data inside the combined spike
+//	timestamp_polarity_image[spike_x][spike_y] 			= combined_spike;								// Update the TPI with the new data
 
 #ifdef VERBOSE
 	printf("Updating the current event (y: %u, x: %u, addr: %u) information (Te: %u, Pol: %d, %d) in the Timestamp Image.\n", spike_y.to_uint(), spike_x.to_uint(),

@@ -1,15 +1,16 @@
 #include "dnd_top.hpp"
 
 #define SIGNAL_NOISE_THRESHOLD 0.5
-#define VERBOSE
+//#define VERBOSE
 
 caviar_data_t dnd_top(
 		caviar_data_t spike_in,
 		timestamp_polarity_image_data_t timestamp_polarity_image[DVS_WIDTH * DVS_HEIGHT],
+//		timestamp_polarity_image_data_t timestamp_polarity_image[DVS_WIDTH][DVS_HEIGHT/COMBINED_SPIKES],
 		timestamp_t current_timestamp
 		){
 #pragma HLS INTERFACE ap_vld port=spike_in,return
-#pragma HLS PIPELINE
+#pragma HLS DATAFLOW
 
 	// Define the mlp_activations signal
 	mlp_input_activation_t mlp_activations[MLP_INPUT_NEURONS];
@@ -21,7 +22,7 @@ caviar_data_t dnd_top(
 	// Run the MLP using the previous activations
 	unsigned short size_in;
 	unsigned short size_out;
-	result_t mlp_out[N_LAYER_5];
+	result_t mlp_out[N_LAYER_6];
 	myproject(mlp_activations, mlp_out, size_in, size_out);
 
 	// Decide if the incoming event is signal or noise
@@ -33,5 +34,4 @@ caviar_data_t dnd_top(
 	}else{
 		return 0;
 	}
-
 }
