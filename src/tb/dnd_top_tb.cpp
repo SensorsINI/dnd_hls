@@ -18,7 +18,7 @@ int main() {
 	printf("%f\n", test.to_float());
 
 	printf("Create the Timestamp Image (TI)\n");
-	timestamp_polarity_image_data_t timestamp_image[DVS_WIDTH * DVS_HEIGHT];
+//	timestamp_polarity_image_data_t timestamp_image[DVS_WIDTH * DVS_HEIGHT];
 
 	printf("Open the input txt spikes file and create the output activation file.\n");
 	FILE *spike_f = fopen(input_events_file_path, "rb");
@@ -57,7 +57,8 @@ int main() {
 		printf("Spike #%u --> Ts: %u, X_col: %u, Y_row: %u, Pol: %u. Caviar spike in: %u \t ",
 				s_id, current_time.to_uint(), x, y, pol, spike_in.to_uint());
 
-		caviar_data_t spike_out = dnd_top(spike_in, timestamp_image, current_time);
+//		caviar_data_t spike_out = dnd_top(spike_in, timestamp_image, current_time);
+		caviar_data_t spike_out = dnd_top(spike_in, current_time);
 
 		printf("\tCaviar spike out: %u\n", spike_out.to_uint());
 

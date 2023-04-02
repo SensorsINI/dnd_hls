@@ -21,7 +21,7 @@
 #include "myproject.h"
 #include "parameters.h"
 
-void myproject(
+void mlp(
     input_t inputlayer_[N_INPUT_1_1],
 //    result_t layer8_out[N_LAYER_6],
 	result_t layer6_out[N_LAYER_6],
