@@ -34,6 +34,7 @@ void mlp(
     #pragma HLS ARRAY_PARTITION variable=layer8_out complete dim=0
     #pragma HLS INTERFACE ap_vld port=inputlayer_,layer8_out 
     #pragma HLS PIPELINE 
+//	#pragma HLS INLINE
 
     const_size_in_1 = N_INPUT_1_1;
     const_size_out_1 = N_LAYER_6;

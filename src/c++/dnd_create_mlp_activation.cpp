@@ -8,6 +8,7 @@ void dnd_create_mlp_activation(
 		timestamp_t current_timestamp,
 		mlp_input_activation_t mlp_activation[MLP_INPUT_NEURONS]
 		) {
+//#pragma HLS INLINE
 #pragma HLS PIPELINE
 #pragma HLS RESOURCE variable=timestamp_polarity_image core=RAM_T2P_BRAM
 #pragma HLS ARRAY_PARTITION variable=timestamp_polarity_image block factor=25 dim=1

@@ -3,7 +3,7 @@
 #include "dnd_top.hpp"
 #include "mlp/defines.h"
 
-#define SPIKE_COUNT 1000
+#define SPIKE_COUNT 100
 // Events captured from the DVS.
 const char * input_events_file_path = "/home/arios/Projects/dvs_denoising/dnd_hls_repo/src/tb/data/v2e-dvs-events.txt";
 
