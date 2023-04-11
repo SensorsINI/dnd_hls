@@ -1,6 +1,19 @@
-# dnd_hls
-This is hardware logic code for the event-based MLP denoising filter described in 
+# Within-Camera Multilayer Perceptron DVS Denoising
+This is hardware logic code for the event-based MLP denoising filter.
 
-# MLP Denoiser for Dynamic Vision Sensor at 65nm
 
 ![image](asic_mlp_dnd/asic_flow/pnr/shot.png)
+
+## Abstract
+In-camera event denoising can dramatically reduce the data rate of event cameras by filtering out noise at the source. A lightweight multilayer perceptron denoising filter (MLPF) providing state-of-the-art low-cost denoising accuracy processes a small neighborhood of pixels from the timestamp image around each event to discriminate signal and noise events. This paper proposes two digital logic implementations of the MLPF denoiser and quantifies their resource cost,  power, and latency. The hardware MLPF quantizes the weights and hidden unit activations to 4 bits and has about 1k weights with about 40% sparsity. The Area-Under-Curve Receiver Operating Characteristic accuracy is nearly indistinguishable from that of the floating point network. The MLPF processes each event in 10 clock cycles.  In FPGA, it uses 3.5k flip flops and 11.5k LUTs. Our ASIC implementation in 65nm digital technology for a 346 x 260 pixel camera occupies an area of 3.3mm^2 and consumes 4nJ of energy per event at event rates up to 25MHz. The MLPF can be easily integrated into an event camera using an FPGA or as an ASIC directly on the camera chip or in the same package.
+This denoising could dramatically reduce the energy consumed by the communication and host processor and open new areas of always-on event camera application under scavenged and battery power.
+
+## Repository folder organization
+- <ins>asic_mlp_dnd</ins>: MLP Denoiser RTL source code fro CMOS 65nm technology.
+- <ins>dnd_hls_src</ins>: C++ HLS source code of the MLP Denoiser for Xilinx target devices.
+- <ins>hls4ml_model_generation</ins>: hls4ml source files for the MLP HLS code generaion.
+- <ins>qmlpf</ins>: qKeras script for MLP model training, quantizing and testing.
+
+## Citation
+...
+
