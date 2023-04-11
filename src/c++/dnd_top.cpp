@@ -1,6 +1,6 @@
 #include "dnd_top.hpp"
 
-#define SIGNAL_NOISE_THRESHOLD 0.5
+//#define SIGNAL_NOISE_THRESHOLD 0.5
 //#define VERBOSE
 
 caviar_data_t dnd_top(
@@ -14,6 +14,7 @@ caviar_data_t dnd_top(
 	// Define the mlp_activations signal
 	mlp_input_activation_t mlp_activations[MLP_INPUT_NEURONS];
 #pragma HLS ARRAY_MAP variable=mlp_activations horizontal
+	result_t SIGNAL_NOISE_THRESHOLD = 0.5;
 
 	// Create the activations for the current incoming spike
 //	dnd_create_mlp_activation(spike_in, timestamp_polarity_image, current_timestamp, mlp_activations);
