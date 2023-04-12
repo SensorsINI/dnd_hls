@@ -15,5 +15,19 @@ This denoising could dramatically reduce the energy consumed by the communicatio
 - <ins>qmlpf</ins>: qKeras script for MLP model training, quantizing and testing.
 
 ## Citation
-...
+
+
+@INPROCEEDINGS{Navaro2023-mlpf-dvs-denoising,
+  title           = "{Within-Camera} Multilayer Perceptron {DVS} Denoising",
+  booktitle       = "2023 {IEEE/CVF} Conference on Computer Vision and Pattern
+                     Recognition Workshops ({CVPRW})",
+  author          = "Navaro, Antonio Rios and Guo, Shasha and Gnaneswaran,
+                     Abarajithan and Vijayakumar, Keerthivasan and Barranco,
+                     Alejandro Linares and Aarrestad, Thea and Kastner, Ryan
+                     and Delbruck, Tobi",
+  institution     = "IEEE",
+  year            =  2023,
+  location        = "Vancouver"
+}
+
 
