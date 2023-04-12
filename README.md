@@ -3,6 +3,7 @@ This is hardware logic code for the event-based MLP denoising filter.
 
 
 ![image](asic_mlp_dnd/asic_flow/pnr/shot.png)
+
 This block implements the DVS interface and mulitlayer perceptron of the denoiser in 65nm process technology. 
 
 ## Abstract
