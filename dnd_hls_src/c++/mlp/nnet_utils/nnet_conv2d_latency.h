@@ -1,3 +1,5 @@
+// This file is part of https://github.com/SensorsINI/dnd_hls. 
+// This intellectual property is licensed under the terms of the project license available at the root of the project.
 #ifndef NNET_CONV2D_LATENCY_H_
 #define NNET_CONV2D_LATENCY_H_
 

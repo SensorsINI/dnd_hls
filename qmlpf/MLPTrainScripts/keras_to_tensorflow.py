@@ -1,3 +1,5 @@
+// This file is part of https://github.com/SensorsINI/dnd_hls. 
+// This intellectual property is licensed under the terms of the project license available at the root of the project.
 #!/usr/bin/env python
 """
 Copyright (c) 2019, by the Authors: Amir H. Abdi

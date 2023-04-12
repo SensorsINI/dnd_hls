@@ -1,3 +1,5 @@
+// This file is part of https://github.com/SensorsINI/dnd_hls. 
+// This intellectual property is licensed under the terms of the project license available at the root of the project.
 module addr_calc #(parameter CAVIAR_X_Y_BITS = 9 )(
 input clk,
 input [1:0]count_modulo,
