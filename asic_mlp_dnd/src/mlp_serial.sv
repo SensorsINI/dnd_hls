@@ -6,7 +6,8 @@ module mlp_serial #(
               P  = 2,
               W_X = 4,
               W_K = 4,
-              W_Y = 16
+              W_Y = 16,
+              GATING = 1
 )(
   input  logic clk, in_vld, rst,
   input  logic [P   -1:0][W_X-1:0] in_mag,
@@ -58,11 +59,16 @@ module mlp_serial #(
 
     always_ff @(posedge clk)
       if (rst || add_last) fc1_out[n2] <= '0;
-      else if (mul_vld)    fc1_out[n2] <= $signed(fc1_out[n2]) + $signed(fc1_mag_mul[0][n2]) + $signed(fc1_pol_mul[0][n2]) + $signed(fc1_mag_mul[1][n2]) + $signed(fc1_pol_mul[1][n2]);
+      else if (mul_vld)
+        fc1_out[n2] <= $signed(fc1_out[n2]) + $signed(fc1_mag_mul[0][n2]) + $signed(fc1_pol_mul[0][n2]) + $signed(fc1_mag_mul[1][n2]) + $signed(fc1_pol_mul[1][n2]);
 
-
-    assign fc2_in[n2] = add_last ? fc1_out[n2][N2-1:0] : '0;
+    assign fc2_in[n2] = !GATING || add_last ? fc1_out[n2][W_X-1:0] : '0; // with data gating
   end
+
+  logic fc2_en;
+  always_ff @(posedge clk)
+    if (rst || out_vld) fc2_en <= 0;
+    else if  (mul_last) fc2_en <= 1;
 
   logic [W_SUM_FC2-1:0] fc2_out;
   
@@ -70,7 +76,7 @@ module mlp_serial #(
     .R(1), .C(N2+1), .W_X(W_X), .W_K(W_K)
   ) FC2_MAG (  
     .clk(clk), 
-    .cen(1'b1), 
+    .cen(!GATING || fc2_en), 
     .k(weights_n2),
     .x({W_X'(1), fc2_in}),
     .y(fc2_out)

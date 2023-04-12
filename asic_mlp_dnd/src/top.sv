@@ -12,6 +12,7 @@ module top #(
               W_X = 4,
               W_K = 4,
               W_Y = 16,
+              GATING = 1,
   localparam W_ADDR          = $clog2(DVS_WIDTH*DVS_HEIGHT)
 )(
   input  logic clk,
@@ -71,7 +72,8 @@ module top #(
    .P  (P  ),
    .W_X(W_X),
    .W_K(W_K),
-   .W_Y(W_Y)
+   .W_Y(W_Y),
+   .GATING(GATING)
   ) MLP (.rst(!rst_n), .*);
 
 endmodule
