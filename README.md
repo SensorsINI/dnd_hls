@@ -17,7 +17,7 @@ This denoising could dramatically reduce the energy consumed by the communicatio
 - <ins>qmlpf</ins>: qKeras script for MLP model training, quantizing and testing.
 
 ## Citation
-This project is the result of a collaboration between 4 labs: Sensors Group, Inst. of Neuroinformatics, UZH-ETH Zurich (UZH-ETH); Robotic and Tech of Computers group, SCORE lab, ETSI-EPS, Univ. of Seville (USE); Univ. of California San Diego (UCSD); Inst. of Particle Physics and Astrophysics, ETH Zurich (ETH); College of Electronic Engineering, National University of Defense Technology (NUDT)
+This project is the result of a collaboration between five labs: Sensors Group, Inst. of Neuroinformatics, UZH-ETH Zurich (UZH-ETH); Robotic and Tech of Computers group, SCORE lab, ETSI-EPS, Univ. of Seville (USE); Univ. of California San Diego (UCSD); Inst. of Particle Physics and Astrophysics, ETH Zurich (ETH); College of Electronic Engineering, National University of Defense Technology (NUDT)
 
 ```
 @INPROCEEDINGS{Navaro2023-mlpf-dvs-denoising,
