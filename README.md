@@ -33,4 +33,5 @@ This project is the result of a collaboration between five labs: Sensors Group, 
   location        = "Vancouver"
 }
 ```
-
+## License
+These designs are licensed under the [CERN Open Hardware License CERN-OHL-W (weakly reciprocal)](https://cern-ohl.web.cern.ch/home). See [license](license) file for details.
