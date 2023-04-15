@@ -1,3 +1,5 @@
+// This file is part of https://github.com/SensorsINI/dnd_hls. 
+// This intellectual property is licensed under the terms of the project license available at the root of the project.
 module top_tb;
   timeunit 1ns/1ps;
   localparam  DVS_WIDTH = 346,
@@ -10,7 +12,8 @@ module top_tb;
               N2 = 10,
               P  = 2,
               W_X = 4,
-              W_K = 4,
+              W_K1 = 6,
+              W_K2 = 4,
               W_Y = 16,
               W_ADDR = $clog2(DVS_WIDTH*DVS_HEIGHT);
 
@@ -51,7 +54,8 @@ module top_tb;
     .N2  (N2 ),
     .P   (P  ),
     .W_X (W_X),
-    .W_K (W_K),
+    .W_K1 (W_K1),
+    .W_K2 (W_K2),
     .W_Y (W_Y)
     ) DUT (.*);
 

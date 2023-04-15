@@ -1,3 +1,5 @@
+// This file is part of https://github.com/SensorsINI/dnd_hls. 
+// This intellectual property is licensed under the terms of the project license available at the root of the project.
 module create_mlp_activations_tb();
 
 parameter integer DVS_WIDTH = 346; 
@@ -53,7 +55,7 @@ initial begin
 //Populating Memory 
 for( int i = 0; i < 8; i++)begin
     for( int j = 0; j < 8; j++)begin
-		  Memory[i][j] = i + j;
+		  Memory[i][j] = i*100 + j; //Random input
         //$display("%d\n",Memory[i][j]);
     end
 end   
