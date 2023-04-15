@@ -53,19 +53,22 @@ logic [CAVIAR_X_Y_BITS-1:0]addr2_x;
 logic [CAVIAR_X_Y_BITS-1:0]addr1_y;
 logic [CAVIAR_X_Y_BITS-1:0]addr2_y;
 logic cen_reg;
+logic cen_reg_tmp;
 
 logic [2-1:0] count_modulo;
+logic addr_calc_enable;
+logic [15:0]ts_tau_diff;
 
 assign cen = cen_reg;
-addr_calc #(.CAVIAR_X_Y_BITS(CAVIAR_X_Y_BITS)) addr_calc_inst( .clk, .count_modulo(count_modulo), .input_addr_x(input_addr_addr_calc_x), .input_addr_y(input_addr_addr_calc_y), .addr1_x_out(addr1_x), .addr2_x_out(addr2_x), .addr1_y_out(addr1_y),.addr2_y_out(addr2_y) );
-age_calc #(.TIMESTAMP_BITS(TIMESTAMP_BITS),.POLARITY_BITS(POLARITY_BITS), .WORD_SIZE(WORD_SIZE)) age_calc_inst( .read_data1(read_data1_mem_reg), .read_data2(read_data2_mem_reg), .out1(MLPout1), .out2(MLPout2), .out3(MLPout3), .out4(MLPout4));
+addr_calc #(.CAVIAR_X_Y_BITS(CAVIAR_X_Y_BITS)) addr_calc_inst( .clk, .count_modulo(count_modulo), .input_addr_x(input_addr_addr_calc_x), .input_addr_y(input_addr_addr_calc_y), .addr1_x_out(addr1_x), .addr2_x_out(addr2_x), .addr1_y_out(addr1_y),.addr2_y_out(addr2_y), .enable(addr_calc_enable) );
+age_calc #(.TIMESTAMP_BITS(TIMESTAMP_BITS),.POLARITY_BITS(POLARITY_BITS), .WORD_SIZE(WORD_SIZE)) age_calc_inst( .read_data1(read_data1_mem_reg), .read_data2(read_data2_mem_reg), .out1(MLPout1), .out2(MLPout2), .out3(MLPout3), .out4(MLPout4), .ts_tau_diff(ts_tau_diff),.current_timestamp(current_timestamp_reg));
 
 //Counter update logic 
 //assign count_upd = (read_data_mem_vld1 & read_data_mem_vld2) ? count_reg+1 : count_reg;
 
 //Input address to addr_calc module 
-assign input_addr_addr_calc_x = ( count_reg ==0 ) ? cavier_in_reg[2*CAVIAR_X_Y_BITS:CAVIAR_X_Y_BITS+1]:addr1_x_reg;
-assign input_addr_addr_calc_y = ( count_reg ==0 ) ? cavier_in_reg[CAVIAR_X_Y_BITS:1]: addr1_y_reg;
+assign input_addr_addr_calc_x = ( count_reg ==0 ) ? cavier_in_reg[2*CAVIAR_X_Y_BITS:CAVIAR_X_Y_BITS+1]:addr1_x;
+assign input_addr_addr_calc_y = ( count_reg ==0 ) ? cavier_in_reg[CAVIAR_X_Y_BITS:1]: addr1_y;
 
 //assign MLPvld = read_data_mem_vld1_reg & read_data_mem_vld2_reg;
 
@@ -78,7 +81,7 @@ addr_port2_y <= addr2_y;
 end
 
 //Assigning read/Write and chip enable
-assign rw = (next_state == STORE)? 1:0;
+assign rw = (current_state == STORE)? 1:0;
 //assign cen = (current_state == IDLE)?0 : 1;
 
 assign write_data_mem = (current_state == STORE)?current_timestamp_reg: 0;
@@ -102,6 +105,7 @@ always_ff@(posedge clk, negedge rst_n)begin
         read_data1_mem_reg <=0;
         read_data2_mem_reg <=0;
         count_modulo <= 0;
+        cen_reg_tmp <= 0;
     end    
     else begin
         current_state <= next_state;
@@ -124,20 +128,22 @@ always_ff@(posedge clk, negedge rst_n)begin
             current_timestamp_reg <= current_timestamp;
             cavier_in_reg <= cavier_in;
         end 
-
+        ts_tau_diff <= current_timestamp_reg - 64;
         if ( read_data_mem_vld1)   
             read_data1_mem_reg <= read_data1_mem;
         if ( read_data_mem_vld2)   
             read_data2_mem_reg <= read_data2_mem;
-        if (current_state != IDLE )
-            cen_reg <=1;
+        if (current_state == LOAD_COMPUTE && next_state != STORE)
+            cen_reg_tmp <=1;
         else    
-            cen_reg <=0;     
+            cen_reg_tmp <=0; 
+
+        cen_reg <= cen_reg_tmp;    
+
         if ( current_state != LOAD_COMPUTE )
             MLPvld_reg <=0;
         else
             MLPvld_reg <= read_data_mem_vld1 & read_data_mem_vld2;
-
     end    
 end
 
@@ -147,18 +153,23 @@ always_comb begin
         count_upd = 0;
         if ( cavier_in_vld & current_timestamp_vld) begin
             next_state = LOAD_COMPUTE;
+            addr_calc_enable =1;
         end    
         else begin
-            next_state = IDLE;   
+            next_state = IDLE;  
+            addr_calc_enable =0; 
         end    
     end    
     LOAD_COMPUTE:begin
+        addr_calc_enable =1;
+        /*
         if (read_data_mem_vld1 & read_data_mem_vld2)
             count_upd = count_reg+1 ;
         else 
             count_upd = count_reg;
-            
-        if( count_reg > 24) begin
+        */
+        count_upd = count_reg+1 ; 
+        if( count_reg > 26) begin
             next_state = STORE; 
         end    
         else begin
@@ -168,6 +179,7 @@ always_comb begin
     STORE:begin
         count_upd = 0;
         next_state = IDLE;
+        addr_calc_enable =0;
     end   
 
     endcase

@@ -9,10 +9,11 @@ module top_tb;
               TIMESTAMP_BITS = 16,
               POLARITY_BITS = 2,
               N1 = 98,
-              N2 = 10,
+              N2 = 20,
               P  = 2,
               W_X = 4,
-              W_K = 4,
+              W_K1 = 6,
+              W_K2 = 4,
               W_Y = 16,
               W_ADDR = $clog2(DVS_WIDTH*DVS_HEIGHT);
 
@@ -53,7 +54,8 @@ module top_tb;
     .N2  (N2 ),
     .P   (P  ),
     .W_X (W_X),
-    .W_K (W_K),
+    .W_K1 (W_K1),
+    .W_K2 (W_K2),
     .W_Y (W_Y)
     ) DUT (.*);
 

@@ -55,7 +55,7 @@ initial begin
 //Populating Memory 
 for( int i = 0; i < 8; i++)begin
     for( int j = 0; j < 8; j++)begin
-		  Memory[i][j] = i + j;
+		  Memory[i][j] = i*100 + j; //Random input
         //$display("%d\n",Memory[i][j]);
     end
 end   

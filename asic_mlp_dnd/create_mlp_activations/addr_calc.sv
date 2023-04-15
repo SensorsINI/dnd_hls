@@ -3,6 +3,7 @@
 module addr_calc #(parameter CAVIAR_X_Y_BITS = 9 )(
 input clk,
 input [1:0]count_modulo,
+input enable,
 input [CAVIAR_X_Y_BITS-1:0]input_addr_x,
 input [CAVIAR_X_Y_BITS-1:0]input_addr_y,
 output [CAVIAR_X_Y_BITS-1:0]addr1_x_out,
@@ -16,13 +17,14 @@ logic [CAVIAR_X_Y_BITS-1:0]addr1_x;
 logic [CAVIAR_X_Y_BITS-1:0]addr1_y;
 logic [CAVIAR_X_Y_BITS-1:0]addr2_x;
 logic [CAVIAR_X_Y_BITS-1:0]addr2_y;
+logic gate_clk; 
 
 assign addr1_x_out = addr1_x;
 assign addr1_y_out = addr1_y;
 assign addr2_x_out = addr2_x;
 assign addr2_y_out = addr2_y;
-
-always_ff @(posedge clk) begin
+assign gate_clk = clk & enable;
+always_ff @(posedge gate_clk) begin
     unique case (count_modulo)
         2'd0: begin
         addr1_x <= input_addr_x - 3;
