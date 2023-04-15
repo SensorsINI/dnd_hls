@@ -9,7 +9,7 @@ module top_tb;
               TIMESTAMP_BITS = 16,
               POLARITY_BITS = 2,
               N1 = 98,
-              N2 = 20,
+              N2 = 10,
               P  = 2,
               W_X = 4,
               W_K1 = 6,
