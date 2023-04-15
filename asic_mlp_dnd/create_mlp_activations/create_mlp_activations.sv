@@ -1,3 +1,5 @@
+// This file is part of https://github.com/SensorsINI/dnd_hls. 
+// This intellectual property is licensed under the terms of the project license available at the root of the project.
 module create_mlp_activations #(parameter integer DVS_WIDTH = 346, DVS_HEIGHT = 260, WORD_SIZE = 18,CAVIAR_X_Y_BITS = 9,TIMESTAMP_BITS = 16,POLARITY_BITS = 2)( 
 input clk,
 input rst_n, 

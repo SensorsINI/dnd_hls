@@ -1,3 +1,5 @@
+// This file is part of https://github.com/SensorsINI/dnd_hls. 
+// This intellectual property is licensed under the terms of the project license available at the root of the project.
 //Numpy array shape [10, 1]
 //Min -1.000000000000
 //Max 0.875000000000

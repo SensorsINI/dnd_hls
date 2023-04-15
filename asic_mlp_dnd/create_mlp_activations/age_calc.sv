@@ -1,3 +1,5 @@
+// This file is part of https://github.com/SensorsINI/dnd_hls. 
+// This intellectual property is licensed under the terms of the project license available at the root of the project.
 module age_calc #(parameter TIMESTAMP_BITS = 16,POLARITY_BITS = 2,WORD_SIZE = 18 )( 
     input [WORD_SIZE-1:0]read_data1, 
     input [WORD_SIZE-1:0]read_data2, 
