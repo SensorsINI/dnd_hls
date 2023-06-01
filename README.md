@@ -1,6 +1,6 @@
 # Within-Camera Multilayer Perceptron DVS Denoising
+Presented at [CVPR 2023 Workshop on Event-based Vision](https://tub-rip.github.io/eventvision2023/)
 This is hardware logic code for the event-based MLP denoising filter.
-
 
 ![image](asic_mlp_dnd/asic_flow/pnr/shot.png)
 
