@@ -17,6 +17,8 @@ This denoising could dramatically reduce the energy consumed by the communicatio
 - <ins>qmlpf</ins>: qKeras script for MLP model training, quantizing and testing.
 
 ## Citation
+See the paper [Within-Camera Multilayer Perceptron DVS Denoising](https://tub-rip.github.io/eventvision2023/papers/2023CVPRW_Within-Camera_Multilayer_Perceptron_DVS_Denoising_supp.pdf).
+
 This project is the result of a collaboration between five labs: Sensors Group, Inst. of Neuroinformatics, UZH-ETH Zurich (UZH-ETH); Robotic and Tech of Computers group, SCORE lab, ETSI-EPS, Univ. of Seville (USE); Univ. of California San Diego (UCSD); Inst. of Particle Physics and Astrophysics, ETH Zurich (ETH); College of Electronic Engineering, National University of Defense Technology (NUDT)
 
 ```
