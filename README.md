@@ -17,7 +17,7 @@ This denoising could dramatically reduce the energy consumed by the communicatio
 - <ins>qmlpf</ins>: qKeras script for MLP model training, quantizing and testing.
 
 ## Citation
-See the paper [Within-Camera Multilayer Perceptron DVS Denoising](https://tub-rip.github.io/eventvision2023/papers/2023CVPRW_Within-Camera_Multilayer_Perceptron_DVS_Denoising_supp.pdf).
+See the 2023 CVPR Workshop on Event Based Vision paper [Within-Camera Multilayer Perceptron DVS Denoising](https://tub-rip.github.io/eventvision2023/papers/2023CVPRW_Within-Camera_Multilayer_Perceptron_DVS_Denoising_supp.pdf) and the 2022 T-PAMI paper [Low Cost and Latency Event Camera Background Activity Denoising](http://dx.doi.org/10.1109/TPAMI.2022.3152999) on which this work is based.
 
 This project is the result of a collaboration between five labs: Sensors Group, Inst. of Neuroinformatics, UZH-ETH Zurich (UZH-ETH); Robotic and Tech of Computers group, SCORE lab, ETSI-EPS, Univ. of Seville (USE); Univ. of California San Diego (UCSD); Inst. of Particle Physics and Astrophysics, ETH Zurich (ETH); College of Electronic Engineering, National University of Defense Technology (NUDT)
 
@@ -34,6 +34,22 @@ This project is the result of a collaboration between five labs: Sensors Group, 
   year            =  2023,
   location        = "Vancouver"
 }
+
+
+@ARTICLE{Guo2022-am,
+  title    = "Low Cost and Latency Event Camera Background Activity Denoising",
+  author   = "Guo, Shasha and Delbruck, Tobi",
+  journal  = "IEEE Trans. Pattern Anal. Mach. Intell.",
+  volume   = "PP",
+  month    =  feb,
+  year     =  2022,
+  url      = "http://dx.doi.org/10.1109/TPAMI.2022.3152999",
+  language = "en",
+  issn     = "0162-8828",
+  pmid     = "35196224",
+  doi      = "10.1109/TPAMI.2022.3152999"
+}
+
 ```
 ## License
 These designs are licensed under the [CERN Open Hardware License CERN-OHL-W (weakly reciprocal)](https://cern-ohl.web.cern.ch/home). See [LICENSE.txt](LICENSE.txt) file for details.
