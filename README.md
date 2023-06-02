@@ -2,9 +2,9 @@
 Presented at [CVPR 2023 Workshop on Event-based Vision](https://tub-rip.github.io/eventvision2023/)
 This is hardware logic code for the event-based MLP denoising filter.
 
-![image](asic_mlp_dnd/asic_flow/pnr/shot.png)
+<img src="asic_mlp_dnd/asic_flow/pnr/shot.png" width=400>
 
-This block implements the DVS interface and mulitlayer perceptron of the denoiser in 65nm process technology. 
+This block implements the DVS interface and mulitlayer perceptron of the denoiser in 65nm process technology. Units are microns.
 
 ## Abstract
 In-camera event denoising can dramatically reduce the data rate of event cameras by filtering out noise at the source. A lightweight multilayer perceptron denoising filter (MLPF) providing state-of-the-art low-cost denoising accuracy processes a small neighborhood of pixels from the timestamp image around each event to discriminate signal and noise events. This paper proposes two digital logic implementations of the MLPF denoiser and quantifies their resource cost,  power, and latency. The hardware MLPF quantizes the weights and hidden unit activations to 4 bits and has about 1k weights with about 40% sparsity. The Area-Under-Curve Receiver Operating Characteristic accuracy is nearly indistinguishable from that of the floating point network. The MLPF processes each event in 10 clock cycles.  In FPGA, it uses 3.5k flip flops and 11.5k LUTs. Our ASIC implementation in 65nm digital technology for a 346 x 260 pixel camera occupies an area of 4.3mm^2 and consumes 4nJ of energy per event at event rates up to 25MHz. The MLPF can be easily integrated into an event camera using an FPGA or as an ASIC directly on the camera chip or in the same package.
