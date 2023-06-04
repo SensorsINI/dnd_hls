@@ -11,6 +11,7 @@ In-camera event denoising can dramatically reduce the data rate of event cameras
 This denoising could dramatically reduce the energy consumed by the communication and host processor and open new areas of always-on event camera application under scavenged and battery power.
 
 ## Repository folder organization
+See the README.md in these folders for details.
 - <ins>asic_mlp_dnd</ins>: MLP Denoiser RTL source code fro CMOS 65nm technology.
 - <ins>dnd_hls_src</ins>: C++ HLS source code of the MLP Denoiser for Xilinx target devices.
 - <ins>hls4ml_model_generation</ins>: hls4ml source files for the MLP HLS code generaion.

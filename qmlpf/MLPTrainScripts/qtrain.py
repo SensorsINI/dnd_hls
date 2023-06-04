@@ -1,5 +1,16 @@
-// This file is part of https://github.com/SensorsINI/dnd_hls. 
-// This intellectual property is licensed under the terms of the project license available at the root of the project.
+## This file is part of https://github.com/SensorsINI/dnd_hls. 
+## This intellectual property is licensed under the terms of the project license available at the root of the project.
+
+# this script trains an =MLPF with dataset test data
+
+# run this script from the MLPTrainScripts folder
+# python qtrain.py 0 4
+# ```
+#  * first parameter 0/1, 0 means quantized training, 1 means float training.
+#  * second parameter, 4 means quantized bits for inputs and activations before the last layer. the last layer have 16 bits.
+
+# see README.md for more information
+
 from __future__ import print_function
 from asyncio import current_task
 from base64 import encode
@@ -13,7 +24,9 @@ import numpy as np
 import os
 
 from tensorflow.keras import optimizers
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  
+from tqdm import tqdm
+
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 import tensorflow
@@ -57,6 +70,11 @@ matplotlib.rcParams['ps.fonttype'] = 42
 
 import scipy.io as sio
 
+# dataset location
+trainfilepath = '../2xTrainingDataDND21train'
+testfilepath = '../2xTrainingDataDND21test'
+
+
 # training params
 learning_rate = 0.0005
 batch_size = 100
@@ -73,8 +91,6 @@ middle = int(csvinputlen / 2)
 hidden = 20
 resize = 7
 epochs = 3
-trainfilepath = 'D://qmlpfpys-s//2xTrainingDataDND21train//'
-testfilepath = 'D://qmlpfpys-s//2xTrainingDataDND21test//'
 
 
 # networkinputlen = resize * resize
@@ -216,7 +232,7 @@ def binpreprocessingresize(allfeatures, resize, targetEventTS, targetEventP):
 
 
     
-    featuresdiff = np.array(featuresdiff, dtype=np.int)
+    featuresdiff = np.array(featuresdiff, dtype=int)
     featuresdiff = featuresdiff/1000
     featuresdiff = featuresdiff.astype(int)
 
@@ -355,7 +371,7 @@ def getgeneratorbatches(files):
         return sumtrainbatches   
 
 def mygenerator(files,mode,encodemethod):
-    print('start generator')
+    print('starting data generator')
     while 1:
         # print('loop generator')
         sumbatches = 0
@@ -410,7 +426,7 @@ def mygenerator(files,mode,encodemethod):
                     yield(x,y)
             except EOFError:
                 print('error' + file_)
-        print(sumbatches)   
+        print(f'{sumbatches} batches done')
 
 
 def splittraintest(csvdir, splitratio):
@@ -583,6 +599,7 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches,resize, hidde
 
         filepath=prefix + "-{epoch:02d}-{val_accuracy:.3f}.h5"
         checkpoint = ModelCheckpoint(filepath,monitor='val_accuracy',mode='max' ,save_best_only='True', save_weights_only='True', save_freq='epoch')
+        print(f'checkpoint={checkpoint}')
 
         # checkpoint = ModelCheckpoint(filepath='mlpmodels',monitor='loss',mode='auto' ,save_best_only='True')
         
@@ -656,7 +673,7 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches,resize, hidde
         initpredictions = np.array([])
 
         icount = 0
-        for i,(batchx,batchy) in enumerate(testgenerator):
+        for i,(batchx,batchy) in tqdm(enumerate(testgenerator)):
             
             if icount == testbatches:
                 print('predict all batch', i)
@@ -703,6 +720,7 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches,resize, hidde
         print('f1score:',f1score)
         cm= confusion_matrix(y_true, y_pred)
 
+        print('confusion matrix')
         print(cm)
 
         cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
@@ -725,6 +743,9 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches,resize, hidde
 
 trainfiles = glob.glob(os.path.join(trainfilepath,'*TI25*.csv'))
 testfiles = glob.glob(os.path.join(testfilepath,'*TI25*.csv'))
+if len(trainfiles)==0 or len(testfiles)==0:
+    print(f'there are no files in {trainfilepath} or in {testfilepath}; check trainfilepath and testfilepath variables and working folder')
+    quit(1)
 trainbatches = 3000#getgeneratorbatches(trainfiles)
 testbatches = 699#getgeneratorbatches(testfiles)
 print(trainbatches,testbatches)
@@ -732,6 +753,8 @@ trainflag=True
 bits = int(sys.argv[2]) # lbp or bin
 
 if int(sys.argv[1]): # train float model
+    print('training floating point model')
     trainFunction(trainfiles,testfiles, trainbatches,testbatches, resize, hidden, epochs, 0, 'single', trainflag, bits)
 else: # train quantized model
+    print(f'training quantized model with {bits} bits for weights and activations (except last layer)')
     trainFunction(trainfiles,testfiles, trainbatches, testbatches, resize, hidden, epochs, 0, 'qsingle', trainflag, bits)

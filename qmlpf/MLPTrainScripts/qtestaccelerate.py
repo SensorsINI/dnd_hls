@@ -1,5 +1,16 @@
-// This file is part of https://github.com/SensorsINI/dnd_hls. 
-// This intellectual property is licensed under the terms of the project license available at the root of the project.
+## This file is part of https://github.com/SensorsINI/dnd_hls. 
+## This intellectual property is licensed under the terms of the project license available at the root of the project.
+
+# this script tests an existing MLPF with dataset test data
+
+# run this script from the MLPTrainScripts folder using arguments like "dri 10000" to test denoising on the driving dataset with batch size 10000
+# see README.md for more information
+
+
+trainfilepath = 'D://qmlpfpys-s//2xTrainingDataDND21train//'
+testfilepath = 'D://qmlpfpys-s//2xTrainingDataDND21test//'
+
+
 from __future__ import print_function
 from asyncio import current_task
 from cmath import polar
@@ -73,8 +84,6 @@ middle = int(csvinputlen / 2)
 hidden = 10#20
 resize = 7
 epochs = 5
-trainfilepath = 'D://qmlpfpys-s//2xTrainingDataDND21train//'
-testfilepath = 'D://qmlpfpys-s//2xTrainingDataDND21test//'
 
 
 # networkinputlen = resize * resize
@@ -225,13 +234,13 @@ def preprocessingresizefortest(absTS,polarity, resize, targetEventTS, targetEven
     featuresdiff = np.abs([features[i,:] - targetEventTS[i] for i in range(len(features))])
     # print('featuresdiff', featuresdiff.shape)
     # print(featuresdiff)
-    featuresdiff = (featuresdiff / 1000).astype(np.int)
+    featuresdiff = (featuresdiff / 1000).astype(int)
     # featuresNormed = (tau - np.abs(featuresdiff)) * 1.0 / tau
     # featuresNormed = np.clip(featuresNormed, 0, 1)
     # featuresNormed[featuresNormed > 0] = 1
 
     featuresNormed = featuresdiff < tau
-    featuresNormed = featuresNormed.astype(np.int)
+    featuresNormed = featuresNormed.astype(int)
 
     # crop
     features = featuresNormed.reshape(featuresNormed.shape[0], patchsize, patchsize)

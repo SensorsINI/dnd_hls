@@ -1,8 +1,18 @@
+This code trains new floating point and quantized multilyaer perceptron denoising filters.
+
+# Setup
+See [requirements.txt](qmlpf/MLPTrainScripts/requirements.txt)
+```
+cd MLPTrainScipts
+conda create -n dnd_hls python=3.10
+pip install -r requirements.txt
+```
+
 # Training a new denoising MLP
 
-1. unzip the train and test.zip
+1. un-rar the archives 2xTrainingDataDND21test.rar and 2xTrainingDataDND21train.rar somewhere (they take about 1.8GB of disk space when uncompressed)
 2. cd MLPTrainScripts
-3. update the dataset path in qtrain.py and qtest.py
+3. update the dataset paths in qmlpf/MLPTrainScripts/qtrain.py and qmlpf/MLPTrainScripts/qtest.py
 ```
 trainfilepath = 'D://qmlpfpys-s//2xTrainingDataDND21train//'
 testfilepath = 'D://qmlpfpys-s//2xTrainingDataDND21test//'
@@ -11,6 +21,7 @@ testfilepath = 'D://qmlpfpys-s//2xTrainingDataDND21test//'
 ## to test the latest model
  unzip the quantized-mlpf-runrocdata.rar and driytrue.rar and put the npy files under the same folder with the qtestaccelerate.py.
 ```
+cd MLPTrainScripts
 python qtestaccelerate.py dri 62000
 ```
  * --dri, application, could be 'hotel'
@@ -21,7 +32,7 @@ python qtestaccelerate.py dri 62000
 python qtrain.py 0 4
 ```
  * first parameter 0/1, 0 means quantized training, 1 means float training.
- * second parameter, 4 means quantized bits for inputs and activations before the last layer. the last layer have 16 bits.
+ * second parameter, 4 means quantized bits for inputs and activations before the last layer. the last layer have 16 bits. Use 32 for floating training.
 
 The key code is in function qbuildModel
 
