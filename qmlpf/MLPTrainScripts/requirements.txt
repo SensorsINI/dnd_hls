@@ -20,4 +20,4 @@ scikit-learn>=0.23.1
 tqdm>=4.48.0
 matplotlib
 pandas
-
+easygui

@@ -57,6 +57,17 @@ matplotlib.rcParams['ps.fonttype'] = 42
 
 import scipy.io as sio
 
+hidden = 20
+resize = 7
+epochs = 5
+trainfilepath = '../2xTrainingDataDND21train/'
+testfilepath = '../2xTrainingDataDND21test'
+
+
+# networkinputlen = resize * resize
+
+tau = 64#128#100000 # 300ms if use exp decay for preprocessing
+
 # training params
 learning_rate = 0.0005
 batch_size = 100#1024#128
@@ -70,16 +81,6 @@ middle = int(csvinputlen / 2)
 # epochs = int(sys.argv[3])
 # csvfilepath = sys.argv[4]
 
-hidden = 20
-resize = 7
-epochs = 5
-trainfilepath = 'D://qmlpfpys-s//2xTrainingDataDND21train//'
-testfilepath = 'D://qmlpfpys-s//2xTrainingDataDND21test//'
-
-
-# networkinputlen = resize * resize
-
-tau = 64#128#100000 # 300ms if use exp decay for preprocessing
 
 global prefix
 
@@ -814,7 +815,11 @@ def trainFunction(traineventfile, testeventfile,  trainbatches, testbatches,resi
             
             continue
 
-        
+# main part of script
+if len(sys.argv)<3:
+    print(f'need at least 3 arguments, e.g. python qtest.py dri 32')
+    quit(1)
+
 flag = sys.argv[1]
 
 
@@ -825,11 +830,14 @@ if flag == 'dri':
     trainbatches = 62000
     testbatches = 62000
 
-if flag == 'hotel':
+elif flag == 'hotel':
     trainfiles = ['hotelandrealshotnoiseevents1.npy']
     testfiles = ['hotelandrealshotnoiseevents1.npy']
     trainbatches = 31000
     testbatches = 31000
+else:
+    print(f'first argument {flag} should be either dri or hotel')
+    quit(1)
 
 lastts = np.load(testfiles[0])[0,1]
 print('lastts', lastts)
@@ -838,7 +846,12 @@ print('lastts', lastts)
 initializetsandpolmap(5,lastts)
 
 
-bits = int(sys.argv[2])
+try:
+    bits = int(sys.argv[2])
+except Exception as e:
+    print(f'2nd arguments should be 32 or some other int for the quantized network')
+    quit(1)
+
 if bits == 32:
     
     wkfiles1 = ['0308pmfloatbin100tau2bitaw0MSEO1fH20_linear_7weights.h5']

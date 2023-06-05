@@ -74,6 +74,15 @@ import scipy.io as sio
 trainfilepath = '../2xTrainingDataDND21train'
 testfilepath = '../2xTrainingDataDND21test'
 
+# MLP params
+# hidden = int(sys.argv[1])
+# resize = int(sys.argv[2])
+# epochs = int(sys.argv[3])
+# csvfilepath = sys.argv[4]
+
+hidden = 20
+resize = 25
+epochs = 5
 
 # training params
 learning_rate = 0.0005
@@ -83,14 +92,7 @@ csvinputlen = patchsize * patchsize
 middle = int(csvinputlen / 2)
 
 
-# hidden = int(sys.argv[1])
-# resize = int(sys.argv[2])
-# epochs = int(sys.argv[3])
-# csvfilepath = sys.argv[4]
 
-hidden = 20
-resize = 7
-epochs = 3
 
 
 # networkinputlen = resize * resize
@@ -557,18 +559,18 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches,resize, hidde
     # global csvdir
     encodemethod='bin'
     prefix = ''
-    if mtype == 'double':
+    if mtype == 'double': # two hidden layer floating-point MLP
         model = qbuildDModel(resize,hidden)
         middlefix = 'DH'
-    elif mtype == 'qsingle':
+    elif mtype == 'qsingle': # quanitized MLP with one hidden layer
         model = qbuildModel(resize,hidden,bits)
         middlefix = 'qH'
         prefix = '0308pm16bitsqsigmoidput' + encodemethod + str(tau)+'tau'+str(bits)+'bitaw' + str(repeat) + 'MSEO1' + middlefix + str(hidden) + '_linear_' + str(resize)
-    elif mtype == 'single':
+    elif mtype == 'single': # floating MLP with one hidden layer
         model = buildModel(resize,hidden)
         middlefix = 'fH'
         prefix = '0308pmfloat' + encodemethod + str(tau)+'tau'+str(bits)+'bitaw' + str(repeat) + 'MSEO1' + middlefix + str(hidden) + '_linear_' + str(resize)
-    elif mtype == 'perceptron':
+    elif mtype == 'perceptron': # single layer pereception (no hidden layer)
         model = qbuildPerceptron(resize)
         middlefix = 'H'
     
@@ -724,6 +726,7 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches,resize, hidde
         print(cm)
 
         cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        print('normalized confusion matrix')
         print(cm_normalized)
 
         # plot output distribution
@@ -740,6 +743,10 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches,resize, hidde
         plt.legend()
         plt.savefig(prefix + '_outputhist.pdf')
 
+# main part of script
+if len(sys.argv)<3:
+    print(f'need at least 3 arguments, e.g. python qtrain.py dri 4')
+    quit(1)
 
 trainfiles = glob.glob(os.path.join(trainfilepath,'*TI25*.csv'))
 testfiles = glob.glob(os.path.join(testfilepath,'*TI25*.csv'))
@@ -750,9 +757,10 @@ trainbatches = 3000#getgeneratorbatches(trainfiles)
 testbatches = 699#getgeneratorbatches(testfiles)
 print(trainbatches,testbatches)
 trainflag=True
+
 bits = int(sys.argv[2]) # lbp or bin
 
-if int(sys.argv[1]): # train float model
+if int(sys.argv[1])>0: # train float model
     print('training floating point model')
     trainFunction(trainfiles,testfiles, trainbatches,testbatches, resize, hidden, epochs, 0, 'single', trainflag, bits)
 else: # train quantized model
