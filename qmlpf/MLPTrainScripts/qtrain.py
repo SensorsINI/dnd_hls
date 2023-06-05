@@ -16,6 +16,7 @@ from asyncio import current_task
 from base64 import encode
 from cmath import polar
 import encodings
+import time
 from operator import mod
 
 import numpy as np
@@ -81,7 +82,7 @@ testfilepath = '../2xTrainingDataDND21test'
 # csvfilepath = sys.argv[4]
 
 hidden = 20
-resize = 25
+resize = 7 # size of input patches to MLP resize*resize
 epochs = 5
 
 # training params
@@ -91,9 +92,12 @@ patchsize = 25
 csvinputlen = patchsize * patchsize
 middle = int(csvinputlen / 2)
 
+print(f'training MLP nodel with \n'
+      f'{hidden} hidden units\n'
+      f'{resize}x{resize} input patch\n'
+      f'using batch size {batch_size}, learning rate {learning_rate}, and {epochs} epochs')
 
-
-
+start_time=time.time()
 
 # networkinputlen = resize * resize
 
@@ -619,7 +623,8 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches,resize, hidde
         all_weights = []
         history.loss_plot(prefix,'epoch', e0loss, e0acc, e0valloss, e0valacc)
 
-        model.save( prefix + 'model.h5')
+        model_file_name = prefix + 'model.h5'
+        model.save(model_file_name)
         model_save_quantized_weights(model, prefix+'weights.h5')
 
         for layer in model.layers:
@@ -636,6 +641,7 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches,resize, hidde
             print(layer.name, w, weight.shape)
 
         print_qstats(model)
+        print(f'saved model as {model_file_name}')
 
     else:
         # model = load_model( prefix + '.h5')
@@ -766,3 +772,6 @@ if int(sys.argv[1])>0: # train float model
 else: # train quantized model
     print(f'training quantized model with {bits} bits for weights and activations (except last layer)')
     trainFunction(trainfiles,testfiles, trainbatches, testbatches, resize, hidden, epochs, 0, 'qsingle', trainflag, bits)
+
+end_time=time.time()
+print(f'total elapsed time {end_time-start_time:.1f} seconds')

@@ -7,11 +7,11 @@
 # see README.md for more information
 
 
-trainfilepath = 'D://qmlpfpys-s//2xTrainingDataDND21train//'
+trainfilepath = '../2xTrainingDataDND21train//'
 testfilepath = 'D://qmlpfpys-s//2xTrainingDataDND21test//'
 
 
-from __future__ import print_function
+# from __future__ import print_function
 from asyncio import current_task
 from cmath import polar
 from operator import mod
@@ -50,6 +50,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os,sys,glob
 import pandas as pd
+from tqdm import tqdm
 
 from sklearn.model_selection import train_test_split
 from custom_dataloader.dataloader import DataGenerator
@@ -571,9 +572,11 @@ def mygenerator(files):
                     # print(m_data.shape)
                     if patchsize >= resize:
                         # sample = {'y': m_data[2], 'x': preprocessingresize(m_data[3:3+csvinputlen*2], resize, m_data[1], m_data[0])} # crop the TI patch according to the given size
+                        # signal or noise flog for events (not sure what 0 or 1 means)
                         y = e_data[:,0]
                         
                         # print(y.shape)
+                        # compute MLP input vectors around events in batch [batch, agepolarityinput]
                         agechannel,polchannel = getageandpolstringTI25(e_data)
                         # print(np.array(agechannel).shape)
                         
@@ -598,7 +601,7 @@ def mygenerator(files):
                     # print(x[:10])
                     # print(y[:10])
                     # exit(0)
-                    yield(x,y)
+                    yield(x,y) # yield the data from generator without storing in memory
             except EOFError:
                 print('error' + file_)
         print(sumbatches)   
