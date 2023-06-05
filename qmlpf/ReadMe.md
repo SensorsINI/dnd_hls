@@ -267,4 +267,4 @@ Loading this model into _MultilayerPerceptronNoiseFilter_ in jAER shows this on 
 
 # Convert a quantized model into hls4ml and RTL code
 
-See [hls4ml_model_generation](hls4ml_model_generation)
+See [hls4ml_model_generation](../hls4ml_model_generation)
