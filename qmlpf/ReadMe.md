@@ -13,6 +13,9 @@ pip install -r requirements.txt
 
 # Training a new denoising MLP
 
+_qtrain_ takes input  from  csv files with the neighborhood age values and polarity 
+values already stored in the csv file, while _qtest_ and _qtestaccelerate_ takes input from the txt file or npy file, which we generated from the hotel aedat txt file and the driving  aedat txt file that records only the (t,x,y,p,sig_or_noise_flag) info of the events.
+
 1. un-rar the archives 2xTrainingDataDND21test.rar and 2xTrainingDataDND21train.rar somewhere (they take about 1.8GB of disk space when uncompressed)
 2. cd MLPTrainScripts
 3. update the dataset paths in qmlpf/MLPTrainScripts/qtrain.py and qmlpf/MLPTrainScripts/qtest.py
@@ -123,7 +126,9 @@ total elapsed time 279.0 seconds
 
 ```
 ## to test accuracy of the latest model
- unzip the quantized-mlpf-runrocdata.rar and driytrue.rar and put the npy files under the same folder with the qtestaccelerate.py.
+We rewrote qtest to qtestaccelerate for accelerating the speed of generating the input for mlpf.
+
+Un-rar the archived quantized-mlpf-runrocdata.rar and driytrue.rar and put the npy files under the same folder with the qtestaccelerate.py.
 ```
 cd MLPTrainScripts
 python qtestaccelerate.py dri 62000
