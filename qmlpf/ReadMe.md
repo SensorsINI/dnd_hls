@@ -38,7 +38,7 @@ conda activate dnd_hls
 pip install -r requirements.txt
 ```
  * Model can be trained using Tensorflow 2.11 on windows, but, Tensorflow 2.5 is required to convert the trained MLP to .pb file for use in jAER. See https://www.tensorflow.org/install/pip
- * See [requirements.txt](qmlpf/MLPTrainScripts/requirements.txt).
+ * See [requirements.txt](MLPTrainScripts/requirements.txt).
 
 # Training a new denoising MLP
 
@@ -227,7 +227,7 @@ python qtest.py hotel 4
 
 # To use the model in jAER for denoising
 
-You can convert the .h5 model to a protobuf .pb file with the script [convertH5toPB.py](qmlpf/MLPTrainScripts/convertH5toPB.py):
+You can convert the .h5 model to a protobuf .pb file with the script [convertH5toPB.py](MLPTrainScripts/convertH5toPB.py):
 ```shell
 python convertH5toPB.py 0308pmfloatbin100tau32bitaw0MSEO1fH20_linear_7model.h5
 ```
