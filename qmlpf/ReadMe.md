@@ -5,12 +5,25 @@ Please see the [main site for Denosing DVS 2021](https://sites.google.com/view/d
 **Note:** Code includes pycharm run configuration files to run some of the scripts with default parameters.
 
 To train a new MLP for denoising, there are 3 main steps:
+1. Setup
 1. collect  the training  data, 
-2. Set up the environment
-2. Train the network  
-3. Test the accuracy on test set data
-4. Convert the model to a .pb file for loading into jAER's _NoiseTesterFilter_
-5. Convert a quantized model into hls4ml and RTL code
+1. Set up the environment
+1. Train the network  
+1. Test the accuracy on test set data
+1. Convert the model to a .pb file for loading into jAER's _NoiseTesterFilter_
+1. Convert a quantized model into hls4ml and RTL code
+
+# Setup
+ * Use a python 3.10 conda environment:
+```shell
+conda create -n dnd_hls python=3.10
+conda activate dnd_hls
+cd MLPTrainScipts
+pip install -r requirements.txt
+```
+ * Model can be trained using Tensorflow 2.11 on windows, but, Tensorflow 2.5 may be required to convert the trained MLP to .pb file for use in jAER. 
+ * If tensorflow does not install or you have trouble using GPU, see https://www.tensorflow.org/install/pip
+ * See [requirements.txt](MLPTrainScripts/requirements.txt).
 
 # Preparing training data
 
@@ -20,25 +33,39 @@ In [jaer](https://jaerproject.net), you can use  [_NoiseTesterFilter_](https://s
 
 ![](media/save_csv_from_NTF.png)
 
-Play a clean recording, add noise to it using the NoiseTesterFilter noise parameters, or mix in real noise using the _OpenNoiseSourceRecording_ button. The enter a CSV file name and select the _outputTrainingData_ checkbox.
+1. Play a clean recording, add noise to it using the _NoiseTesterFilter_ noise parameters, or mix in real noise using the _OpenNoiseSourceRecording_ button. 
+2. Select the _outputTrainingData_ checkbox (in the 5. Output section)
+3. and enter a CSV file name to the csvFileName text box and hit enter. That will create the file.
+4. To close the file, hit the closeCSVFile button.
+5. Save the CSV file to some place in dnd_hls so the qtrain.py script can find it (see below for training)
+
+Record one or more training CSV files and one or more testing CSV files.
+
+#### Contents of CSV files
+Each line of the CSV file contains patch information around one event. 
+
+The columns start with information about this event (polarity,x,y,t), then whether it is signal (1) or noise event (0), then a list of 525 relative timestamps in the patch neighborhood, then 525 last event polarities in neighborhood, finally the first event in this packet (not used):
+
+```text
+#MLPF training data
+# type, event.x, event.y, event.timestamp,signal/noise(1/0), nnbTimestamp(25*25), nnbPolarity(25*25), packetFirstEventTimestamp
+-1,166,69,2454804,0,2322220,-326443,...,-79046,1,0,0,0,0,0,1,...,0,2445900
+````
+
+#### Notes on CSV files
+1. Put the training CSV in one folder, e.g. _train_, and the test CSV in another folder, e.g. _test_.
+2. The CSV files can be compressed and do not need to be uncompressed for pandas read_csv; using .xz "Ultra" compression in 7-zip can result in 1% compression (100X smaller files) for these huge CSV files.
+2. Large CSV can (and must, otherwise pandas can cause BSOD in windows 10) be split by lines, e.g. this command splits into files each with 10000 events:
+3. ```split -l10000 --additional-suffix=.csv train/particles-100-60s-1Hz-1.csv particles-100-60s-1Hz-1-train```
+4. You can then use xv to compress each CSV: (-z means compress, -9 is high compression, -T 4 uses 4 threads, -v is verbose)
+5. ```xz -z -9 -T 4 -v *.csv```
 
 ### From v2e
 [v2e](https://sites.google.com/view/video2events/home) is our DVS simulator. It lets you generate synthetic clean data (but with motion blur and threshold mismatch nonidealities).
 
 See [Synthetic Input](https://github.com/SensorsINI/v2e#synthetic-input) in the v2e github.
 
-From v2e, you can generate aedat2 files that can be mixed with noise in NoiseTesterFilter to generate MLPF training data.
-
-# Setup
- * Use python 3.10 conda env
-```shell
-cd MLPTrainScipts
-conda create -n dnd_hls python=3.10
-conda activate dnd_hls
-pip install -r requirements.txt
-```
- * Model can be trained using Tensorflow 2.11 on windows, but, Tensorflow 2.5 is required to convert the trained MLP to .pb file for use in jAER. See https://www.tensorflow.org/install/pip
- * See [requirements.txt](MLPTrainScripts/requirements.txt).
+From v2e, you can generate aedat2 files that can be mixed with noise in _NoiseTesterFilter_ to generate MLPF training data.
 
 # Training a new denoising MLP
 
@@ -47,10 +74,26 @@ values already stored in the csv file, while _qtest_ and _qtestaccelerate_ takes
 
 1. For data used in the DND21 paper and the IISW paper, un-rar the archives 2xTrainingDataDND21test.rar and 2xTrainingDataDND21train.rar somewhere (they take about 1.8GB of disk space when uncompressed). These data combine the hotel-bar and driving datasets used in our publications.
 2. cd MLPTrainScripts
-3. update the dataset paths in qmlpf/MLPTrainScripts/qtrain.py and qmlpf/MLPTrainScripts/qtest.py. Assuming you run the scripts from MLPTrainScripts and have the datasets at qmlpf, then set
+3. update the dataset paths in qmlpf/MLPTrainScripts/qtrain.py and qmlpf/MLPTrainScripts/qtest.py. Assuming you run the scripts from MLPTrainScripts and have the datasets at _qmlpf_ (one level up), then set
 ```
 trainfilepath = '../2xTrainingDataDND21train'
 testfilepath = '../2xTrainingDataDND21test'
+```
+
+Set the desired MLPF parameters: Patch size (resize), tau (in ms), hidden (the # of hidden units), and also the training parameters.
+
+```python
+trainfilepath = os.path.join(DATASET_DIR,'particles_train')
+testfilepath = os.path.join(DATASET_DIR,'particles_test')
+
+hidden = 40 # number of hidden units
+resize = 15 # size of input patches to MLP resize*resize
+tau = 1000 # in ms
+
+# training params
+epochs = 5
+learning_rate = 0.0005
+batch_size = 1000 # training batch size
 ```
 
 Sample training run log
