@@ -38,6 +38,11 @@ In [jaer](https://jaerproject.net), you can use  [_NoiseTesterFilter_](https://s
 3. and enter a CSV file name to the csvFileName text box and hit enter. That will create the file.
 4. To close the file, hit the closeCSVFile button.
 5. Save the CSV file to some place in dnd_hls so the qtrain.py script can find it (see below for training)
+6. When the CSV file is closed, summary statistics are printed that are used later for biasing the network training for (possibly) imbalanced data. Record the dataset SNR value.
+```
+ INFO: closed CSV output file G:\Downloads\particles-quick-test.csv with 101,840 events (191 signal events, 101,649 noise events, SNR=0.00188
+```
+![](media/CSV-stats.png)
 
 Record one or more training CSV files and one or more testing CSV files.
 
@@ -86,6 +91,7 @@ Set the desired MLPF parameters: Patch size (resize), tau (in ms), hidden (the #
 trainfilepath = os.path.join(DATASET_DIR,'particles_train')
 testfilepath = os.path.join(DATASET_DIR,'particles_test')
 
+snr=0.0018 # the statistic from output of recording CSV file, or computed in the data generator (not yet implemented)
 hidden = 40 # number of hidden units
 resize = 15 # size of input patches to MLP resize*resize
 tau = 1000 # in ms

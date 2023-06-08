@@ -12,6 +12,8 @@
 # see README.md for more information
 
 from __future__ import print_function
+
+import datetime
 from asyncio import current_task
 from base64 import encode
 from cmath import polar
@@ -58,6 +60,8 @@ import pandas as pd
 # from sklearn.model_selection import train_test_split
 # from custom_dataloader.dataloader import DataGenerator
 
+from weighted_binary_cross_entropy import weighted_binary_crossentropy
+
 from convertH5toPB import freeze_session # to save pb model
 
 from qkeras import *
@@ -74,12 +78,16 @@ matplotlib.rcParams['ps.fonttype'] = 42
 
 import scipy.io as sio
 MODEL_DIR = 'models' # where models and plots are saved
-DATASET_DIR='training_data'
+# DATASET_DIR='training_data'
+# DATASET_DIR='g:/Downloads/particles/'
+DATASET_DIR='training_data/particles-300'
 # dataset location
 # trainfilepath = '../2xTrainingDataDND21train'
 # testfilepath = '../2xTrainingDataDND21test'
-trainfilepath = os.path.join(DATASET_DIR,'particles_train')
-testfilepath = os.path.join(DATASET_DIR,'particles_test')
+# trainfilepath = os.path.join(DATASET_DIR,'particles_train')
+# testfilepath = os.path.join(DATASET_DIR,'particles_test')
+trainfilepath = os.path.join(DATASET_DIR,'train')
+testfilepath = os.path.join(DATASET_DIR,'test')
 
 # MLP params
 # hidden = int(sys.argv[1])
@@ -94,8 +102,9 @@ tau = 1000 #64#128
 
 
 # training params
-snr=1./100 # ratio of signal events to noise events in dataset. Set to 1 for original balanced DND21 paper; set to other values for e.g. high noise rate and low signal rate; see model.compile below
-epochs = 5
+SNR=0.0893 # SNR= 1. / 100 # ratio of signal events to noise events in dataset. Set to 1 for original balanced DND21 paper; set to other values for e.g. high noise rate and low signal rate; see model.compile below
+# you can get this ratio at end of output of CSV file from jAER NoiseTesterFilter; See ReadMe.md
+epochs = 7
 learning_rate = 0.0005
 batch_size = 1000 # training batch size
 patchsize = 25 # size of actual recorded patches from jAER NoiseTesterFilter
@@ -105,7 +114,7 @@ middle = int(csvinputlen / 2)
 print(f'training MLP nodel with \n'
       f'{hidden} hidden units\n'
       f'{resize}x{resize} input patch\n'
-      f'using batch size {batch_size}, learning rate {learning_rate}, {epochs} epochs, and class ratio SNR {snr:.3f}')
+      f'using batch size {batch_size}, learning rate {learning_rate}, {epochs} epochs, and class ratio SNR {SNR:.3f}')
 
 start_time=time.time()
 
@@ -172,8 +181,8 @@ class LossHistory(Callback):
     def loss_plot(self, prefix, loss_type, e0loss, e0acc, e0valloss, e0valacc):
 
         iters = range(len(self.losses[loss_type])+1)
-        np.save(os.path.join(MODEL_DIR,prefix + 'loss.npy'), np.array([e0loss] + self.losses[loss_type]))
-        np.save(os.path.join(MODEL_DIR,prefix + 'acc.npy'), np.array([e0acc] + self.accuracy[loss_type]))
+        np.save(prefix + 'loss.npy', np.array([e0loss] + self.losses[loss_type]))
+        np.save(prefix + 'acc.npy', np.array([e0acc] + self.accuracy[loss_type]))
 
         plt.figure()
         # acc
@@ -190,7 +199,7 @@ class LossHistory(Callback):
         plt.ylabel('acc-loss')
         plt.legend(loc="upper right")
         
-        plt.savefig(os.path.join(MODEL_DIR,prefix+'training.pdf'))
+        plt.savefig(prefix+'training.pdf')
 
 import math
 
@@ -399,7 +408,11 @@ def mygenerator(files,mode,encodemethod):
                 else:
                     encoding = "utf_8"
                 print(f'reading CSV file {file_}...')
-                df = pd.read_csv(file_,usecols=[0] + [i for i in range(3,5+csvinputlen*2)], header=0, comment='#')
+                try:
+                    df = pd.read_csv(file_,usecols=[0] + [i for i in range(3,5+csvinputlen*2)], header=0, comment='#')
+                except Exception as e:
+                    print(f'got exception trying to read {file_}: {e}')
+                    continue
                 df.fillna(0)
                 # random.seed(1)
                 # zero = len(df[df.iloc[:,2] == 0])
@@ -415,7 +428,7 @@ def mygenerator(files,mode,encodemethod):
                     # print(m_data.shape)
                     if patchsize >= resize:
                         # sample = {'y': m_data[2], 'x': preprocessingresize(m_data[3:3+csvinputlen*2], resize, m_data[1], m_data[0])} # crop the TI patch according to the given size
-                        y = m_data[:,2]
+                        y = m_data[:,2] # this is the ground truth target class (0=noise 1=signal)
                         
                         # print(y.shape)
                         if encodemethod == 'bin':
@@ -483,14 +496,17 @@ def qbuildDModel(resize, hidden):
 
         return model
 
-def buildModel(resize, hidden):
+def buildModel(resize, hidden, output_bias=None): # https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
+    if output_bias is not None:
+        output_bias = tf.keras.initializers.Constant(output_bias)
     networkinputlen = resize * resize
     if resize > 0:
         inputs = Input(shape=[networkinputlen*2, ], name='input')
         x = Dense(hidden, input_shape=(networkinputlen*2, ), activation='relu', name='fc1')(inputs)
         
         # x = Dropout(0.2)(x)
-        x = Dense(1, activation='sigmoid', name='output')(x)
+        x = Dense(1, activation='sigmoid', name='output',
+                         bias_initializer=output_bias)(x)
         
         model = Model(inputs, x)
 
@@ -563,60 +579,34 @@ def plot_roc_curve(y_true,y_score,prefix):
     plt.title('roc curve' + str(auc))
     plt.plot(fpr,tpr,color='b',linewidth=1)
     plt.plot([0,1],[0,1],'r--')
-    plt.savefig(os.path.join(MODEL_DIR,prefix + '_roccurve.pdf'))
+    plt.savefig(prefix + '_roccurve.pdf')
     plt.clf()
-
-# https://stackoverflow.com/questions/35155655/loss-function-for-class-imbalanced-binary-classifier-in-tensor-flow
-import keras.backend as K
-def weighted_binary_crossentropy(pos_weight=1.):
-    """ Weighted binary crossentropy between an output tensor and a target tensor.
-    # Arguments
-        pos_weight: A coefficient to use on the positive examples.
-    # Returns
-        A loss function supposed to be used in model.compile().
-    """
-
-    def _to_tensor(x, dtype):
-        """Convert the input `x` to a tensor of type `dtype`.
-        # Arguments
-            x: An object to be converted (numpy array, list, tensors).
-            dtype: The destination type.
-        # Returns
-            A tensor.
-        """
-        return tf.convert_to_tensor(x, dtype=dtype)
-
-    def _calculate_weighted_binary_crossentropy(target, output, from_logits=False):
-        """Calculate weighted binary crossentropy between an output tensor and a target tensor.
-        # Arguments
-            target: A tensor with the same shape as `output`.
-            output: A tensor.
-            from_logits: Whether `output` is expected to be a logits tensor.
-                By default, we consider that `output`
-                encodes a probability distribution.
-        # Returns
-            A tensor.
-        """
-        # Note: tf.nn.sigmoid_cross_entropy_with_logits
-        # expects logits, Keras expects probabilities.
-        if not from_logits:
-            # transform back to logits
-            _epsilon = _to_tensor(K.epsilon(), output.dtype.base_dtype)
-            output = tf.clip_by_value(output, _epsilon, 1 - _epsilon)
-            output = tf.math.log(output / (1 - output))
-        target = tf.dtypes.cast(target, tf.float32)
-        return tf.nn.weighted_cross_entropy_with_logits(labels=target, logits=output, pos_weight=pos_weight)
-
-    def _weighted_binary_crossentropy(y_true, y_pred):
-        return K.mean(_calculate_weighted_binary_crossentropy(y_true, y_pred), axis=-1)
-
-    return _weighted_binary_crossentropy
 
 
 # trainbatches = 2705#3842
 # testbatches = 784#2078#938
 def trainFunction(trainfiles, testfiles, trainbatches, testbatches,resize, hidden, epochs, repeat, mtype, Train,bits):
-    # global csvdir
+    pos = SNR  # count of positive class
+    neg = 1 - SNR  # count of negative class
+    total = pos + neg
+    weight_for_0 = (1 / neg) * (total) / 2.0
+    weight_for_1 = (1 / pos) * (total) / 2.0
+    class_weight = {0: weight_for_0, 1: weight_for_1}
+    initial_bias = np.log(pos / neg)  # https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
+    loss_fn = weighted_binary_crossentropy(pos_weight=weight_for_1)
+
+    METRICS = [
+        keras.metrics.TruePositives(name='tp'),
+        keras.metrics.FalsePositives(name='fp'),
+        keras.metrics.TrueNegatives(name='tn'),
+        keras.metrics.FalseNegatives(name='fn'),
+        keras.metrics.BinaryAccuracy(name='accuracy'),
+        keras.metrics.Precision(name='precision'),
+        keras.metrics.Recall(name='recall'),
+        keras.metrics.AUC(name='auc'),
+        keras.metrics.AUC(name='prc', curve='PR'),  # precision-recall curve
+    ]
+
     encodemethod='bin'
     prefix = ''
     if mtype == 'double': # two hidden layer floating-point MLP
@@ -627,15 +617,22 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches,resize, hidde
         middlefix = 'qH'
         prefix = '16bit-qsigmoidput' + encodemethod + str(tau)+'tau'+str(bits)+'bitaw' + str(repeat) + 'MSEO1' + middlefix + str(hidden) + '_linear_' + str(resize)
     elif mtype == 'single': # floating MLP with one hidden layer
-        model = buildModel(resize,hidden)
+        model = buildModel(resize,hidden,output_bias=initial_bias)
         middlefix = 'fH'
         prefix = 'float' + encodemethod + str(tau)+'tau'+str(bits)+'bitaw' + str(repeat) + 'MSEO1' + middlefix + str(hidden) + '_linear_' + str(resize)
     elif mtype == 'perceptron': # single layer pereception (no hidden layer)
         model = qbuildPerceptron(resize)
         middlefix = 'H'
+    else:
+        raise TypeError(f'model type {mtype} is not recognized')
 
     from pathlib import Path
     Path(MODEL_DIR).mkdir(exist_ok=True)
+    datestr = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M")
+    model_name_base = os.path.join(MODEL_DIR, prefix + '-' + datestr)
+    print(f'saving model to {model_name_base}XXX')
+    # Path(model_name_base).mkdir(exist_ok=True)
+    # print(f'made folder {model_name_base} to save model data to')
 
     if Train:
         traingenerator = mygenerator(trainfiles,1,encodemethod)
@@ -646,17 +643,12 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches,resize, hidde
         optimizer = Adam(learning_rate=learning_rate)
         # model.compile(optimizer, loss='mean_squared_error', metrics=['accuracy']) # original loss used in DND21 paper with balanced signal and noise event counts
         # https://stackoverflow.com/questions/35155655/loss-function-for-class-imbalanced-binary-classifier-in-tensor-flow
-        pos = snr # count of positive class
-        neg = 1-snr # count of negative class
-        total = pos + neg
-        weight_for_0 = (1 / neg) * (total) / 2.0
-        weight_for_1 = (1 / pos) * (total) / 2.0
 
-        class_weight = {0: weight_for_0, 1: weight_for_1}
+
         model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
-            loss=weighted_binary_crossentropy(weight_for_1),
-            metrics=tf.keras.metrics.Precision(name='precision')
+            loss=loss_fn,
+            metrics=METRICS
         )
         model.summary()
 
@@ -675,48 +667,49 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches,resize, hidde
         print(f'checkpoint={checkpoint}')
 
         # checkpoint = ModelCheckpoint(filepath='mlpmodels',monitor='loss',mode='auto' ,save_best_only='True')
-        
 
-       
-        model.fit_generator(generator=traingenerator,
-        steps_per_epoch=trainbatches,
-        epochs=epochs, 
-        validation_data=testgenerator, 
-        validation_steps=testbatches,
-        callbacks=[history,checkpoint], 
-        # callbacks=[history], 
-        verbose=1, workers=1, use_multiprocessing=False)
+        early_stopping = tf.keras.callbacks.EarlyStopping(
+            monitor='val_auc', # stop when validation AUC drops from overfitting
+            verbose=1,
+            patience=4,
+            mode='max',
+            restore_best_weights=True)
 
-        all_weights = []
-        history.loss_plot(prefix,'epoch', e0loss, e0acc, e0valloss, e0valacc)
+        model.fit_generator(
+            generator=traingenerator,
+            steps_per_epoch=trainbatches,
+            epochs=epochs,
+            validation_data=testgenerator,
+            validation_steps=testbatches,
+            callbacks=[history,checkpoint,early_stopping],
+            verbose=1, workers=1, use_multiprocessing=False
+        )
 
+        history.loss_plot(model_name_base,'epoch', e0loss, e0acc, e0valloss, e0valacc)
 
-        model_file_name = os.path.join(MODEL_DIR,prefix + 'model.h5')
+        model_file_name = model_name_base+'-model.h5'
         model.save(model_file_name)
-        quantized_weights_filename=os.path.join(MODEL_DIR, prefix+'weights.h5')
+        quantized_weights_filename=model_name_base+'weights.h5'
         model_save_quantized_weights(model, quantized_weights_filename)
 
+        all_weights = []
         for layer in model.layers:
             for w, weights in enumerate(layer.get_weights()):
                 print(layer.name, w)
                 all_weights.append(weights.flatten())
 
         all_weights = np.concatenate(all_weights).astype(np.float32)
-        print(all_weights.size)
+        print(f'total number of weights: {all_weights.size}')
 
-
+        print('layers:')
         for layer in model.layers:
           for w, weight in enumerate(layer.get_weights()):
             print(layer.name, w, weight.shape)
 
         print_qstats(model)
-        print(f'saved model as {model_file_name}')
 
-        try:
-            freeze_session(model_file_name)
-        except Exception as e:
-            print(f'could not convert h5 model to pb model; got: {e}')
-    else:
+    else: # test model TODO update below code
+        print('testing saved model on data')
         # model = load_model( prefix + '.h5')
         # model.summary()
         # model = qbuildModel(resize,hidden)
@@ -746,6 +739,7 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches,resize, hidde
 
     # n_batches = len(testgenerator)
     if True:
+        print('generating training plots and ROC curve plot')
         # loss, acc = model.evaluate_generator(testgenerator,steps=testbatches, verbose=1) 
         # print('No.%d trained net %s loss: %.2f, acc: %.2f'%(repeat,prefix,loss,acc))
         # y_true = np.concatenate([testgenerator[i][1] for i in range(testbatches)])
@@ -754,7 +748,7 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches,resize, hidde
         initpredictions = np.array([])
 
         icount = 0
-        for i,(batchx,batchy) in tqdm(enumerate(testgenerator)):
+        for i,(batchx,batchy) in enumerate(testgenerator):
             
             if icount == testbatches:
                 print('predict all batch', i)
@@ -770,10 +764,8 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches,resize, hidde
         
         rocauc = roc_auc_score(y_true,initpredictions)
         print(prefix,'auc',rocauc)
-        if Train:
-            weightpath = prefix
-            
-        plot_roc_curve(y_true,initpredictions,weightpath.replace('.h5',str(rocauc)))
+
+        plot_roc_curve(y_true,initpredictions,model_name_base.replace('.h5',str(rocauc)))
         # del model
         # return
         y_pred = (initpredictions > 0.5).astype(int)
@@ -822,22 +814,33 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches,resize, hidde
         plt.legend()
         plt.savefig(os.path.join(MODEL_DIR,prefix + '_outputhist.pdf'))
 
+    try:
+        freeze_session(model_file_name)
+        print(f'saved model as {model_file_name}')
+    except Exception as e:
+        print(f'could not convert h5 model to pb model; got: {e}')
+
+
 # main part of script
 if len(sys.argv)<3:
     print(f'need at least 3 arguments, e.g. "python qtrain.py 0 4" to train quantized net with 4-bit weights and states. See ReadMe.md')
     quit(1)
 
-trainfiles = glob.glob(os.path.join(trainfilepath,'*.csv*')) # trailing wildcard to read compressed csv files, e.g. xxx.csv.xz or xxx.csv
-testfiles = glob.glob(os.path.join(testfilepath,'*.csv*'))
+from pathlib import Path
+trainfiles = glob.glob(str(Path(trainfilepath).joinpath('*.csv*'))) # trailing wildcard to read compressed csv files, e.g. xxx.csv.xz or xxx.csv
+testfiles = glob.glob(str(Path(testfilepath).joinpath('*.csv*'))) # trailing wildcard to read compressed csv files, e.g. xxx.csv.xz or xxx.csv
 if len(trainfiles)==0 or len(testfiles)==0:
     print(f'there are no files in {trainfilepath} or in {testfilepath}; check trainfilepath and testfilepath variables and working folder')
     quit(1)
 else:
     print(f'** found {len(trainfiles)} training CSV files and {len(testfiles)} testing CSV files')
-trainbatches = 3000#getgeneratorbatches(trainfiles)
-testbatches = 699#getgeneratorbatches(testfiles)
+
+# todo enlarge to really run
+trainbatches = batch_size #getgeneratorbatches(trainfiles) # todo very slow, replace with constants when running repeatedly
+testbatches = batch_size/10 #getgeneratorbatches(testfiles)
 print(f'trainbatches={trainbatches}, testbatches={testbatches}')
-trainflag=True
+
+trainflag=True # set to false for model testing
 
 bits = int(sys.argv[2]) # quantization bits for training quantized net, ignored for floating point training
 

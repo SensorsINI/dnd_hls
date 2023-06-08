@@ -4,13 +4,16 @@
 # use tf2.x(tf1.14 also ok) to convert the model hdf5 trained by tf2.x to pb
 import tensorflow as tf
 import os,sys
+from weighted_binary_cross_entropy import weighted_binary_crossentropy
+
 def freeze_session(model_path=None,clear_devices=True):
     print(f'converting h5 model to pb model for model_path={model_path}')
     tf.compat.v1.reset_default_graph()
     session=tf.compat.v1.keras.backend.get_session()
     graph = session.graph
     with graph.as_default():
-        model = tf.keras.models.load_model(model_path)
+        custom_objects={"_weighted_binary_crossentropy": weighted_binary_crossentropy()}
+        model = tf.keras.models.load_model(model_path, custom_objects=custom_objects)
         output_names = [out.op.name for out in model.outputs]
         print("output_names",output_names)
         input_names =[innode.op.name for innode in model.inputs]
