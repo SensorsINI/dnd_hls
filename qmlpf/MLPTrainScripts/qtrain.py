@@ -14,58 +14,44 @@
 from __future__ import print_function
 
 import datetime
-from asyncio import current_task
-from base64 import encode
 from cmath import polar
-import encodings
 import time
-from operator import mod
 
-import numpy as np
 # from numpy.core.numeric import load
 # np.random.seed(1337)
 import os
 
+import argparse
 from tensorflow.keras import optimizers
-from tqdm import tqdm
 
+from qmlpf.MLPTrainScripts.util import my_logger, yes_or_no
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 import tensorflow
 from tensorflow import keras
-from tensorflow.keras import callbacks, models
-from tensorflow.keras.preprocessing import sequence
-from tensorflow.keras.models import Model, Sequential, load_model
-from tensorflow.keras.layers import Input, Dense,Embedding,Dropout
-from tensorflow.keras.layers import LSTM
-from tensorflow.keras.datasets import imdb
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Dense, Dropout
 from tensorflow.keras.callbacks import Callback
-from tensorflow.keras.optimizers import Adam, SGD
+from tensorflow.keras.optimizers import Adam
 import matplotlib.pyplot as plt
-from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_score,accuracy_score, confusion_matrix
+from sklearn.metrics import f1_score, precision_score, recall_score,accuracy_score, confusion_matrix
 import tensorflow as tf
-from tensorflow.keras.utils import to_categorical
-
 from sklearn.model_selection import train_test_split
-from tensorflow.keras.callbacks import TensorBoard
 from tensorflow.keras.callbacks import ModelCheckpoint
-
-import matplotlib.pyplot as plt
-import numpy as np
-import os,sys,glob
+import os, glob
 import pandas as pd
 
 # from sklearn.model_selection import train_test_split
 # from custom_dataloader.dataloader import DataGenerator
 
+from qkeras import *
+from qkeras.utils import model_save_quantized_weights
 from weighted_binary_cross_entropy import weighted_binary_crossentropy
 
 from convertH5toPB import freeze_session # to save pb model
-
-from qkeras import *
-from qkeras.utils import model_save_quantized_weights, load_qmodel
+log=my_logger(__name__)
 
 import matplotlib
 matplotlib.rcParams.update({'font.size': 14})
@@ -76,11 +62,10 @@ matplotlib.rcParams['font.family'] = "sans-serif"
 matplotlib.rcParams['pdf.fonttype'] = 42
 matplotlib.rcParams['ps.fonttype'] = 42
 
-import scipy.io as sio
 MODEL_DIR = 'models' # where models and plots are saved
 # DATASET_DIR='training_data'
 # DATASET_DIR='g:/Downloads/particles/'
-DATASET_DIR='training_data/particles-300'
+DATASET_DIR='training_data/particles-real-noise-10-100pps'
 # dataset location
 # trainfilepath = '../2xTrainingDataDND21train'
 # testfilepath = '../2xTrainingDataDND21test'
@@ -95,31 +80,42 @@ testfilepath = os.path.join(DATASET_DIR,'test')
 # epochs = int(sys.argv[3])
 # csvfilepath = sys.argv[4]
 
-hidden = 20
-resize = 7 # size of input patches to MLP resize*resize
+num_hidden_layers=2 # use 1 for single hidden layer, 0 for perceptron
+num_hidden_units = 30 # number of units in each hidden layer
+actual_patch_size = 15 # size of input patches to MLP resize*resize, should be odd integer
 # tau = 100000 # 300ms if use exp decay for preprocessing
-tau = 1000 #64#128
+tau_ms = 1000  # time window for decay of time surface. Features to be filtered in should fit in the actual_patch_size window during this duration
 
+
+if actual_patch_size%2==0:
+    log.error(f'actual_patch_size ({actual_patch_size}) should be odd')
+    quit(1)
 
 # training params
-SNR=0.0893 # SNR= 1. / 100 # ratio of signal events to noise events in dataset. Set to 1 for original balanced DND21 paper; set to other values for e.g. high noise rate and low signal rate; see model.compile below
+SNR=0.465 # SNR= 1. / 100 # ratio of signal events to noise events in dataset. Set to 1 for original balanced DND21 paper; set to other values for e.g. high noise rate and low signal rate; see model.compile below
 # you can get this ratio at end of output of CSV file from jAER NoiseTesterFilter; See ReadMe.md
-epochs = 7
+epochs = 20
 learning_rate = 0.0005
-batch_size = 1000 # training batch size
+batch_size = 500 # training batch size
+dropout=0
 patchsize = 25 # size of actual recorded patches from jAER NoiseTesterFilter
 csvinputlen = patchsize * patchsize
 middle = int(csvinputlen / 2)
 
 print(f'training MLP nodel with \n'
-      f'{hidden} hidden units\n'
-      f'{resize}x{resize} input patch\n'
-      f'using batch size {batch_size}, learning rate {learning_rate}, {epochs} epochs, and class ratio SNR {SNR:.3f}')
+      f'{num_hidden_layers} hidden layers\n'
+      f'{num_hidden_units} hidden units per layer\n'
+      f'{actual_patch_size}x{actual_patch_size} input patch\n'
+      f'assuming tau_ms={tau_ms}\n'
+      f'using batch size {batch_size}, dropout={dropout}, learning rate {learning_rate}, {epochs} epochs,\n'
+      f'    and class ratio signal to noise SNR {SNR:.3f}'
+      )
+
+ok=yes_or_no('Are these parameters what you intend?', timeout=5)
+if not ok:
+    quit(0)
 
 start_time=time.time()
-
-# networkinputlen = resize * resize
-
 
 global prefix
 
@@ -259,7 +255,7 @@ def binpreprocessingresize(allfeatures, resize, targetEventTS, targetEventP):
     featuresdiff = featuresdiff/1000
     featuresdiff = featuresdiff.astype(int)
 
-    featuresNormed = np.abs(featuresdiff) < tau
+    featuresNormed = np.abs(featuresdiff) < tau_ms
     featuresNormed = featuresNormed.astype(int)
 
     # featuresNormed = (tau - np.abs(featuresdiff)) * 1.0 / tau
@@ -307,7 +303,7 @@ def preprocessingresize(allfeatures, resize, targetEventTS, targetEventP):
     featuresdiff = np.array(featuresdiff, dtype=np.int)
     featuresdiff = featuresdiff/1000
     featuresdiff = featuresdiff.astype(int)
-    featuresNormed = (tau - np.abs(featuresdiff)) * 1.0 / tau
+    featuresNormed = (tau_ms - np.abs(featuresdiff)) * 1.0 / tau_ms
     
     
     featuresNormed = np.clip(featuresNormed, 0, 1)
@@ -341,7 +337,7 @@ def preprocessing(features, targetEventTS):
     features = features.transpose()
     # normalization
     featuresdiff = features - targetEventTS
-    featuresNormed = (tau - np.abs(featuresdiff)) * 1.0 / tau
+    featuresNormed = (tau_ms - np.abs(featuresdiff)) * 1.0 / tau_ms
     featuresNormed = np.clip(featuresNormed, 0, 1)
     # featuresNormed = np.exp(-np.abs(featuresdiff)/tau)
 
@@ -394,7 +390,7 @@ def getgeneratorbatches(files):
         return sumtrainbatches   
 
 def mygenerator(files,mode,encodemethod):
-    print('starting data generator')
+    log.debug('starting data generator')
     while 1:
         # print('loop generator')
         sumbatches = 0
@@ -407,11 +403,11 @@ def mygenerator(files,mode,encodemethod):
                     encoding = "utf_8_sig"
                 else:
                     encoding = "utf_8"
-                print(f'reading CSV file {file_}...')
+                print(f' loading {file_}')
                 try:
                     df = pd.read_csv(file_,usecols=[0] + [i for i in range(3,5+csvinputlen*2)], header=0, comment='#')
                 except Exception as e:
-                    print(f'got exception trying to read {file_}: {e}')
+                    log.warning(f'got exception trying to read {file_}: {e}')
                     continue
                 df.fillna(0)
                 # random.seed(1)
@@ -426,18 +422,18 @@ def mygenerator(files,mode,encodemethod):
                     # print(m_data.shape,m_data[:10])
                     m_data = m_data.astype('float')
                     # print(m_data.shape)
-                    if patchsize >= resize:
+                    if patchsize >= actual_patch_size:
                         # sample = {'y': m_data[2], 'x': preprocessingresize(m_data[3:3+csvinputlen*2], resize, m_data[1], m_data[0])} # crop the TI patch according to the given size
                         y = m_data[:,2] # this is the ground truth target class (0=noise 1=signal)
                         
                         # print(y.shape)
                         if encodemethod == 'bin':
-                            x = binpreprocessingresize(m_data[:,3:3+csvinputlen*2], resize, m_data[:,1], m_data[:,0])
+                            x = binpreprocessingresize(m_data[:,3:3+csvinputlen*2], actual_patch_size, m_data[:, 1], m_data[:, 0])
                         elif encodemethod == 'lbp':
-                            x = lbppreprocessingresize(m_data[:,3:3+csvinputlen*2], resize, m_data[:,1], m_data[:,0])
+                            x = lbppreprocessingresize(m_data[:,3:3+csvinputlen*2], actual_patch_size, m_data[:, 1], m_data[:, 0])
                         
                         else:
-                            x = preprocessingresize(m_data[:,3:3+csvinputlen*2], resize, m_data[:,1], m_data[:,0])
+                            x = preprocessingresize(m_data[:,3:3+csvinputlen*2], actual_patch_size, m_data[:, 1], m_data[:, 0])
 
                         # print(y.shape,y[:10])
                         # print(x.shape,x[:10])
@@ -496,15 +492,21 @@ def qbuildDModel(resize, hidden):
 
         return model
 
-def buildModel(resize, hidden, output_bias=None): # https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
+def buildModel(patch_size, num_hidden_units, num_hidden_layers=1, output_bias=None, dropout=0.5): # https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
     if output_bias is not None:
         output_bias = tf.keras.initializers.Constant(output_bias)
-    networkinputlen = resize * resize
-    if resize > 0:
+    networkinputlen = patch_size * patch_size
+    if patch_size > 0:
         inputs = Input(shape=[networkinputlen*2, ], name='input')
-        x = Dense(hidden, input_shape=(networkinputlen*2, ), activation='relu', name='fc1')(inputs)
-        
-        # x = Dropout(0.2)(x)
+        x = Dense(num_hidden_units, input_shape=(networkinputlen * 2,), activation='relu', name='fc1')(inputs)
+        if dropout>0:
+            x = Dropout(dropout)(x)
+
+        for i in range(num_hidden_layers-1):
+            x = Dense(num_hidden_units, input_shape=(num_hidden_units,), activation='relu', name=f'fc{i+2}')(x)
+            if dropout > 0:
+                x = Dropout(dropout)(x)
+
         x = Dense(1, activation='sigmoid', name='output',
                          bias_initializer=output_bias)(x)
         
@@ -565,8 +567,6 @@ def qbuildPerceptron(resize):
         return model
 
 
-
-import sklearn
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve
 import matplotlib.pyplot as plt
@@ -585,7 +585,7 @@ def plot_roc_curve(y_true,y_score,prefix):
 
 # trainbatches = 2705#3842
 # testbatches = 784#2078#938
-def trainFunction(trainfiles, testfiles, trainbatches, testbatches,resize, hidden, epochs, repeat, mtype, Train,bits):
+def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, hidden, epochs, repeat, mtype, Train, bits, dropout=0.0, num_hidden_layers=1):
     pos = SNR  # count of positive class
     neg = 1 - SNR  # count of negative class
     total = pos + neg
@@ -610,18 +610,18 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches,resize, hidde
     encodemethod='bin'
     prefix = ''
     if mtype == 'double': # two hidden layer floating-point MLP
-        model = qbuildDModel(resize,hidden)
+        model = qbuildDModel(patch_size, hidden)
         middlefix = 'DH'
     elif mtype == 'qsingle': # quanitized MLP with one hidden layer
-        model = qbuildModel(resize,hidden,bits)
+        model = qbuildModel(patch_size, hidden, bits)
         middlefix = 'qH'
-        prefix = '16bit-qsigmoidput' + encodemethod + str(tau)+'tau'+str(bits)+'bitaw' + str(repeat) + 'MSEO1' + middlefix + str(hidden) + '_linear_' + str(resize)
+        prefix = '16bit-qsigmoidput' + encodemethod + str(tau_ms) + 'tau' + str(bits) + 'bitaw' + str(repeat) + 'MSEO1' + middlefix + str(hidden) + '_linear_' + str(patch_size)
     elif mtype == 'single': # floating MLP with one hidden layer
-        model = buildModel(resize,hidden,output_bias=initial_bias)
+        model = buildModel(patch_size=patch_size, num_hidden_units=num_hidden_units, num_hidden_layers=num_hidden_layers, output_bias=initial_bias, dropout=dropout)
         middlefix = 'fH'
-        prefix = 'float' + encodemethod + str(tau)+'tau'+str(bits)+'bitaw' + str(repeat) + 'MSEO1' + middlefix + str(hidden) + '_linear_' + str(resize)
+        prefix = 'float' + encodemethod + str(tau_ms) + 'tau' + str(bits) + 'bitaw' + str(repeat) + 'MSEO1' + middlefix + str(hidden) + '_linear_' + str(patch_size)
     elif mtype == 'perceptron': # single layer pereception (no hidden layer)
-        model = qbuildPerceptron(resize)
+        model = qbuildPerceptron(patch_size)
         middlefix = 'H'
     else:
         raise TypeError(f'model type {mtype} is not recognized')
@@ -630,7 +630,7 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches,resize, hidde
     Path(MODEL_DIR).mkdir(exist_ok=True)
     datestr = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M")
     model_name_base = os.path.join(MODEL_DIR, prefix + '-' + datestr)
-    print(f'saving model to {model_name_base}XXX')
+    print(f'will save model to files starting with {model_name_base}')
     # Path(model_name_base).mkdir(exist_ok=True)
     # print(f'made folder {model_name_base} to save model data to')
 
@@ -812,13 +812,17 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches,resize, hidde
         plt.hist(initpredictions, bins=20, label=histlabel)
         plt.xlim(0,1)
         plt.legend()
-        plt.savefig(os.path.join(MODEL_DIR,prefix + '_outputhist.pdf'))
+        plt.savefig(model_name_base + '_outputhist.pdf')
 
     try:
         freeze_session(model_file_name)
         print(f'saved model as {model_file_name}')
     except Exception as e:
         print(f'could not convert h5 model to pb model; got: {e}')
+
+# parser=argparse.ArgumentParser(description='trains MLPs for denoising DVS')
+# parser.add_argument('--type', choices=['float','quantized'], help='either train floating point network or train quantized network with --bits bits of weight and state precision')
+# parser.add_argument('--bits', type=int, help='train quantized network with --bits bits of weight and state precision')
 
 
 # main part of script
@@ -838,7 +842,7 @@ else:
 # todo enlarge to really run
 trainbatches = batch_size #getgeneratorbatches(trainfiles) # todo very slow, replace with constants when running repeatedly
 testbatches = batch_size/10 #getgeneratorbatches(testfiles)
-print(f'trainbatches={trainbatches}, testbatches={testbatches}')
+print(f'batch size used for training={trainbatches}, for testing={testbatches}')
 
 trainflag=True # set to false for model testing
 
@@ -846,10 +850,10 @@ bits = int(sys.argv[2]) # quantization bits for training quantized net, ignored 
 
 if int(sys.argv[1])>0: # train float model
     print('training floating point model')
-    trainFunction(trainfiles,testfiles, trainbatches,testbatches, resize, hidden, epochs, 0, 'single', trainflag, bits)
+    trainFunction(trainfiles, testfiles, trainbatches, testbatches, actual_patch_size, num_hidden_units, epochs, 0, 'single', trainflag, bits, num_hidden_layers=num_hidden_layers, dropout=dropout)
 else: # train quantized model
     print(f'training quantized model with {bits} bits for weights and activations (except last layer)')
-    trainFunction(trainfiles,testfiles, trainbatches, testbatches, resize, hidden, epochs, 0, 'qsingle', trainflag, bits)
+    trainFunction(trainfiles, testfiles, trainbatches, testbatches, actual_patch_size, num_hidden_units, epochs, 0, 'qsingle', trainflag, bits)
 
 end_time=time.time()
 print(f'total elapsed time {end_time-start_time:.1f} seconds')

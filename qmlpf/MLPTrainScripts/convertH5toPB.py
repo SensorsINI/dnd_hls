@@ -13,7 +13,7 @@ def freeze_session(model_path=None,clear_devices=True):
     graph = session.graph
     with graph.as_default():
         custom_objects={"_weighted_binary_crossentropy": weighted_binary_crossentropy()}
-        model = tf.keras.models.load_model(model_path, custom_objects=custom_objects)
+        model = tf.compat.v1.keras.models.load_model(model_path, custom_objects=custom_objects)
         output_names = [out.op.name for out in model.outputs]
         print("output_names",output_names)
         input_names =[innode.op.name for innode in model.inputs]
@@ -53,6 +53,9 @@ if __name__ == "__main__":
     if len(sys.argv)<2:
         from easygui import fileopenbox
         f=fileopenbox('select h5 model file', default='models/*.h5',title='h5 chooser')
+        if f is None or f=='':
+            print('no file selected')
+            quit(0)
     else:
         f=sys.argv[1]
     main(f)

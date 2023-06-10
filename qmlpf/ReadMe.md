@@ -61,9 +61,10 @@ The columns start with information about this event (polarity,x,y,t), then wheth
 1. Put the training CSV in one folder, e.g. _train_, and the test CSV in another folder, e.g. _test_.
 2. The CSV files can be compressed and do not need to be uncompressed for pandas read_csv; using .xz "Ultra" compression in 7-zip can result in 1% compression (100X smaller files) for these huge CSV files.
 2. Large CSV can (and must, otherwise pandas can cause BSOD in windows 10) be split by lines, e.g. this command splits into files each with 10000 events:
-3. ```split -l10000 --additional-suffix=.csv train/particles-100-60s-1Hz-1.csv particles-100-60s-1Hz-1-train```
-4. You can then use xv to compress each CSV: (-z means compress, -9 is high compression, -T 4 uses 4 threads, -v is verbose)
-5. ```xz -z -9 -T 4 -v *.csv```
+3. ```split --verbose -l10000 --additional-suffix=.csv train/particles-100-60s-1Hz-1.csv particles-100-60s-1Hz-1-train part-100-```
+4. You can then use xv to compress each CSV: (-z means compress, -9 is high compression, -T 12 uses 12 threads, -v is verbose)
+5. ```xz -z -9 -T 12 -v part-100*.csv```
+6. Split these xz files into _train_ and _test_ folders in ratio that you choose, e.g. 80% training.
 
 ### From v2e
 [v2e](https://sites.google.com/view/video2events/home) is our DVS simulator. It lets you generate synthetic clean data (but with motion blur and threshold mismatch nonidealities).
