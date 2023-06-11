@@ -29,8 +29,13 @@ from qmlpf.MLPTrainScripts.util import my_logger, yes_or_no
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
+
+# do not change these imports without knowing what you are doing.
+# if you import keras from TF2, then the resulting MLP cannot be loaded into TF1 in jAER!!!
+
 import tensorflow
 from tensorflow import keras
+from tensorflow.keras import layers, models
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, Dense, Dropout
 from tensorflow.keras.callbacks import Callback
@@ -65,7 +70,8 @@ matplotlib.rcParams['ps.fonttype'] = 42
 MODEL_DIR = 'models' # where models and plots are saved
 # DATASET_DIR='training_data'
 # DATASET_DIR='g:/Downloads/particles/'
-DATASET_DIR='training_data/particles-real-noise-10-100pps'
+# DATASET_DIR='training_data/particles-real-noise-10-100pps'
+DATASET_DIR='training_data/particles-slow-real-noise'
 # dataset location
 # trainfilepath = '../2xTrainingDataDND21train'
 # testfilepath = '../2xTrainingDataDND21test'
@@ -80,8 +86,8 @@ testfilepath = os.path.join(DATASET_DIR,'test')
 # epochs = int(sys.argv[3])
 # csvfilepath = sys.argv[4]
 
-num_hidden_layers=2 # use 1 for single hidden layer, 0 for perceptron
-num_hidden_units = 30 # number of units in each hidden layer
+num_hidden_layers=1 # use 1 for single hidden layer, 0 for perceptron
+num_hidden_units = 500 # number of units in each hidden layer
 actual_patch_size = 15 # size of input patches to MLP resize*resize, should be odd integer
 # tau = 100000 # 300ms if use exp decay for preprocessing
 tau_ms = 1000  # time window for decay of time surface. Features to be filtered in should fit in the actual_patch_size window during this duration
@@ -92,12 +98,15 @@ if actual_patch_size%2==0:
     quit(1)
 
 # training params
-SNR=0.465 # SNR= 1. / 100 # ratio of signal events to noise events in dataset. Set to 1 for original balanced DND21 paper; set to other values for e.g. high noise rate and low signal rate; see model.compile below
+# set SNR according to dataset signal and noise event counts, reported at end of recording CSV file from NTF in jAER
+SNR= 0.0761 # particles-slow-real-noise
+# SRN= 0.465 # particles-real-noise-10-100pps
+# SNR= 1. / 100 # ratio of signal events to noise events in dataset. Set to 1 for original balanced DND21 paper; set to other values for e.g. high noise rate and low signal rate; see model.compile below
 # you can get this ratio at end of output of CSV file from jAER NoiseTesterFilter; See ReadMe.md
 epochs = 20
 learning_rate = 0.0005
 batch_size = 500 # training batch size
-dropout=0
+dropout=0.25 # TODO we cannot current use dropout because it results in a datatype 21 that jAER cannot recognize with java tf1 1.5.0
 patchsize = 25 # size of actual recorded patches from jAER NoiseTesterFilter
 csvinputlen = patchsize * patchsize
 middle = int(csvinputlen / 2)
@@ -107,13 +116,15 @@ print(f'training MLP nodel with \n'
       f'{num_hidden_units} hidden units per layer\n'
       f'{actual_patch_size}x{actual_patch_size} input patch\n'
       f'assuming tau_ms={tau_ms}\n'
-      f'using batch size {batch_size}, dropout={dropout}, learning rate {learning_rate}, {epochs} epochs,\n'
+      f'using training data from {trainfilepath}\n'
+      f'using batch size {batch_size}, dropout={dropout}, learning rate {learning_rate}, and maximum of {epochs} epochs,\n'
       f'    and class ratio signal to noise SNR {SNR:.3f}'
       )
 
-ok=yes_or_no('Are these parameters what you intend?', timeout=5)
-if not ok:
-    quit(0)
+if os.name!='nt':
+    ok=yes_or_no('Are these parameters what you intend?', timeout=10) # timeout does not work on windows, user nust confirm
+    if not ok:
+        quit(0)
 
 start_time=time.time()
 
@@ -199,7 +210,8 @@ class LossHistory(Callback):
 
 import math
 
-def lbppreprocessingresize(allfeatures, resize, targetEventTS, targetEventP): # auc 0.85/0.80
+def lbppreprocessingresize(allfeatures, resize, targetEventTS, targetEventP): # auc 0.85/0.80  # TODO what does this do?
+
     # print(features.shape)
     # print(features)
     # print(allfeatures.shape, targetEventTS.shape, targetEventP.shape)
@@ -235,7 +247,7 @@ def lbppreprocessingresize(allfeatures, resize, targetEventTS, targetEventP): # 
     return features2
 
 
-def binpreprocessingresize(allfeatures, resize, targetEventTS, targetEventP):
+def binpreprocessingresize(allfeatures, resize, targetEventTS, targetEventP): # TODO what is this for?
     # print(features.shape)
     # print(features)
     # print(allfeatures.shape, targetEventTS.shape, targetEventP.shape)
@@ -282,6 +294,48 @@ def binpreprocessingresize(allfeatures, resize, targetEventTS, targetEventP):
     # print(features2.shape)
     return features2
 
+def cnnpreprocessingresize(allfeatures, resize, targetEventTS, targetEventP):
+    # print(features.shape)
+    # print(features)
+    # print(allfeatures.shape, targetEventTS.shape, targetEventP.shape)
+    absTS = allfeatures[:,:csvinputlen]
+    polarity = allfeatures[:,csvinputlen:]
+
+    features = absTS
+    featuresdiff = [features[i,:] - targetEventTS[i] for i in range(len(features))]
+    # print(featuresdiff)
+
+    featuresdiff = np.array(featuresdiff, dtype=int)
+    featuresdiff = featuresdiff/1000
+    featuresdiff = featuresdiff.astype(int)
+
+    featuresNormed = np.abs(featuresdiff) < tau_ms
+    featuresNormed = featuresNormed.astype(int)
+
+    # featuresNormed = (tau - np.abs(featuresdiff)) * 1.0 / tau
+    # featuresNormed = np.clip(featuresNormed, 0, 1)
+    # featuresNormed[featuresNormed > 0] = 1 # bin
+
+    # crop
+    features = featuresNormed.reshape(featuresNormed.shape[0], patchsize, patchsize)
+    margin = int((patchsize - resize) / 2)
+    cropend = patchsize - margin
+    features = features[:,margin:cropend, margin:cropend]
+    features = features.reshape(features.shape[0],resize * resize)
+
+    polarity = polarity.reshape(polarity.shape[0],patchsize, patchsize)
+    margin = int((patchsize - resize) / 2)
+    cropend = patchsize - margin
+    channelP = polarity[:,margin:cropend, margin:cropend]
+    channelP = channelP.reshape(channelP.shape[0], resize * resize)
+    channelP[features==0] = 0 # set the polarity to be 0 if the event is too old, which means the ts features are 0
+    channelP[:,int(resize*resize/2)] = targetEventP # ensure the center location has the classified event's polarity
+
+    features2 = np.hstack((features,channelP))
+    features2 = features2.reshape((-1,resize,resize,2))
+    print(f'shape of CNN input: {features2.shape}')
+    return features2
+
 
 def preprocessingresize(allfeatures, resize, targetEventTS, targetEventP):
     # print(features.shape)
@@ -300,7 +354,7 @@ def preprocessingresize(allfeatures, resize, targetEventTS, targetEventP):
     # print(featuresdiff)
 
     
-    featuresdiff = np.array(featuresdiff, dtype=np.int)
+    featuresdiff = np.array(featuresdiff, dtype=int)
     featuresdiff = featuresdiff/1000
     featuresdiff = featuresdiff.astype(int)
     featuresNormed = (tau_ms - np.abs(featuresdiff)) * 1.0 / tau_ms
@@ -348,7 +402,7 @@ train = {}
 val = {}
 
 import random as random
-def getgeneratorbatches(files):
+def getgeneratorbatches(files): # TODO not used anymore
     # print('start generator')
     # while 1:
     if 1:
@@ -431,7 +485,8 @@ def mygenerator(files,mode,encodemethod):
                             x = binpreprocessingresize(m_data[:,3:3+csvinputlen*2], actual_patch_size, m_data[:, 1], m_data[:, 0])
                         elif encodemethod == 'lbp':
                             x = lbppreprocessingresize(m_data[:,3:3+csvinputlen*2], actual_patch_size, m_data[:, 1], m_data[:, 0])
-                        
+                        elif encodemethod=='cnn':
+                            x = cnnpreprocessingresize(m_data[:,3:3+csvinputlen*2], actual_patch_size, m_data[:, 1], m_data[:, 0])
                         else:
                             x = preprocessingresize(m_data[:,3:3+csvinputlen*2], actual_patch_size, m_data[:, 1], m_data[:, 0])
 
@@ -453,7 +508,7 @@ def mygenerator(files,mode,encodemethod):
         # print(f'{sumbatches} batches done')
 
 
-def splittraintest(csvdir, splitratio):
+def splittraintest(csvdir, splitratio): # TODO not used now
     
     allFiles = glob.glob(os.path.join(csvdir,'*TI25*.csv'))
     if len(allFiles) > 0:
@@ -492,7 +547,7 @@ def qbuildDModel(resize, hidden):
 
         return model
 
-def buildModel(patch_size, num_hidden_units, num_hidden_layers=1, output_bias=None, dropout=0.5): # https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
+def build_mlp_model(patch_size, num_hidden_units, num_hidden_layers=1, output_bias=None, dropout=0.5): # https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
     if output_bias is not None:
         output_bias = tf.keras.initializers.Constant(output_bias)
     networkinputlen = patch_size * patch_size
@@ -512,7 +567,17 @@ def buildModel(patch_size, num_hidden_units, num_hidden_layers=1, output_bias=No
         
         model = Model(inputs, x)
 
-        return model
+def build_cnn_model(patch_size, num_hidden_units, num_hidden_layers=1, output_bias=None, dropout=0.5): # https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
+    if output_bias is not None:
+        output_bias = tf.keras.initializers.Constant(output_bias)
+    model = models.Sequential()
+    model.add(layers.Conv2D(16, (3, 3), activation='relu', input_shape=(patch_size,patch_size, 2)))
+    model.add(layers.MaxPooling2D((2, 2)))
+    model.add(layers.Conv2D(32, (3, 3), activation='relu'))
+    model.add(layers.MaxPooling2D((2, 2)))
+    model.add(layers.Flatten())
+    model.add(layers.Dense(1, activation='sigmoid',bias_initializer=output_bias))
+    return model
 
 
 def qbuildModel(resize, hidden, bits):
@@ -585,7 +650,7 @@ def plot_roc_curve(y_true,y_score,prefix):
 
 # trainbatches = 2705#3842
 # testbatches = 784#2078#938
-def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, hidden, epochs, repeat, mtype, Train, bits, dropout=0.0, num_hidden_layers=1):
+def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, hidden, epochs, repeat, mtype, Train, bits, dropout=0.0, num_hidden_layers=1): # todo repeat same as num_hidden_layers
     pos = SNR  # count of positive class
     neg = 1 - SNR  # count of negative class
     total = pos + neg
@@ -607,7 +672,7 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, 
         keras.metrics.AUC(name='prc', curve='PR'),  # precision-recall curve
     ]
 
-    encodemethod='bin'
+    encodemethod='bin' if mtype!='cnn' else 'cnn'
     prefix = ''
     if mtype == 'double': # two hidden layer floating-point MLP
         model = qbuildDModel(patch_size, hidden)
@@ -616,10 +681,14 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, 
         model = qbuildModel(patch_size, hidden, bits)
         middlefix = 'qH'
         prefix = '16bit-qsigmoidput' + encodemethod + str(tau_ms) + 'tau' + str(bits) + 'bitaw' + str(repeat) + 'MSEO1' + middlefix + str(hidden) + '_linear_' + str(patch_size)
-    elif mtype == 'single': # floating MLP with one hidden layer
-        model = buildModel(patch_size=patch_size, num_hidden_units=num_hidden_units, num_hidden_layers=num_hidden_layers, output_bias=initial_bias, dropout=dropout)
+    elif mtype == 'mlp': # floating MLP with one hidden layer
+        model = build_mlp_model(patch_size=patch_size, num_hidden_units=num_hidden_units, num_hidden_layers=num_hidden_layers, output_bias=initial_bias, dropout=dropout)
         middlefix = 'fH'
-        prefix = 'float' + encodemethod + str(tau_ms) + 'tau' + str(bits) + 'bitaw' + str(repeat) + 'MSEO1' + middlefix + str(hidden) + '_linear_' + str(patch_size)
+        prefix = 'float' + encodemethod + str(tau_ms) + 'tau' + str(bits) + 'bitaw' + str(repeat) +  middlefix + str(hidden) + '_linear_' + str(patch_size)
+    elif mtype == 'cnn': # floating MLP with one hidden layer
+        model = build_cnn_model(patch_size=patch_size, num_hidden_units=num_hidden_units, num_hidden_layers=num_hidden_layers, output_bias=initial_bias, dropout=dropout)
+        middlefix = 'cnn'
+        prefix = 'float' + encodemethod + str(tau_ms) + 'tau' + str(bits) + 'bitaw' + str(repeat) +  middlefix + str(hidden) + '_linear_' + str(patch_size)
     elif mtype == 'perceptron': # single layer pereception (no hidden layer)
         model = qbuildPerceptron(patch_size)
         middlefix = 'H'
@@ -820,15 +889,21 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, 
     except Exception as e:
         print(f'could not convert h5 model to pb model; got: {e}')
 
-# parser=argparse.ArgumentParser(description='trains MLPs for denoising DVS')
-# parser.add_argument('--type', choices=['float','quantized'], help='either train floating point network or train quantized network with --bits bits of weight and state precision')
-# parser.add_argument('--bits', type=int, help='train quantized network with --bits bits of weight and state precision')
+parser=argparse.ArgumentParser(description='trains MLPs for denoising DVS')
+# parser.add_argument('--train', action='store_true', help='train a model')
+parser.add_argument('--quantized', type=int, help='train quantized network with QUANTIZED bits of weight and state precision')
+parser.add_argument('--arch', choices=['perceptron','mlp','cnn'], help='type of network to train')
 
+args=parser.parse_args()
+if args.quantized:
+    if args.bits is None:
+        log.error('--bits N is missing for --quantized')
+        quit(1)
 
 # main part of script
-if len(sys.argv)<3:
-    print(f'need at least 3 arguments, e.g. "python qtrain.py 0 4" to train quantized net with 4-bit weights and states. See ReadMe.md')
-    quit(1)
+# if len(sys.argv)<3:
+#     print(f'need at least 3 arguments, e.g. "python qtrain.py 0 4" to train quantized net with 4-bit weights and states. See ReadMe.md')
+#     quit(1)
 
 from pathlib import Path
 trainfiles = glob.glob(str(Path(trainfilepath).joinpath('*.csv*'))) # trailing wildcard to read compressed csv files, e.g. xxx.csv.xz or xxx.csv
@@ -846,14 +921,7 @@ print(f'batch size used for training={trainbatches}, for testing={testbatches}')
 
 trainflag=True # set to false for model testing
 
-bits = int(sys.argv[2]) # quantization bits for training quantized net, ignored for floating point training
-
-if int(sys.argv[1])>0: # train float model
-    print('training floating point model')
-    trainFunction(trainfiles, testfiles, trainbatches, testbatches, actual_patch_size, num_hidden_units, epochs, 0, 'single', trainflag, bits, num_hidden_layers=num_hidden_layers, dropout=dropout)
-else: # train quantized model
-    print(f'training quantized model with {bits} bits for weights and activations (except last layer)')
-    trainFunction(trainfiles, testfiles, trainbatches, testbatches, actual_patch_size, num_hidden_units, epochs, 0, 'qsingle', trainflag, bits)
+trainFunction(trainfiles, testfiles, trainbatches, testbatches, actual_patch_size, num_hidden_units, epochs, 0, args.arch, trainflag, args.quantized, num_hidden_layers=num_hidden_layers, dropout=dropout)
 
 end_time=time.time()
 print(f'total elapsed time {end_time-start_time:.1f} seconds')

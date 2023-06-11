@@ -3,8 +3,106 @@
 
 # use tf2.x(tf1.14 also ok) to convert the model hdf5 trained by tf2.x to pb
 import tensorflow as tf
-import os,sys
+import os,sys,re
 from weighted_binary_cross_entropy import weighted_binary_crossentropy
+from tensorflow.core.framework import graph_pb2
+from tensorflow.core.framework import node_def_pb2
+
+def remove_dropout_nodes(input_graph):
+  """Prunes out nodes that aren't needed for inference.
+
+  There are nodes like Identity and CheckNumerics that are only useful
+  during training, and can be removed in graphs that will be used for
+  nothing but inference. Here we identify and remove them, returning an
+  equivalent graph. To be specific, CheckNumerics nodes are always removed, and
+  Identity nodes that aren't involved in control edges are spliced out so that
+  their input and outputs are directly connected.
+
+  Args:
+    input_graph: Model to analyze and prune.
+
+  Returns:
+    A list of nodes with the unnecessary ones removed.
+  """
+  types_to_remove = {"CheckNumerics": True}
+
+  input_nodes = input_graph.node
+  names_to_remove = {}
+  for node in input_nodes:
+    if 'dropout' in node.name:
+      names_to_remove[node.name] = True
+
+  nodes_after_removal = []
+  for node in input_nodes:
+    if node.name in names_to_remove:
+      continue
+    new_node = node_def_pb2.NodeDef()
+    new_node.CopyFrom(node)
+    input_before_removal = node.input
+    del new_node.input[:]
+    for full_input_name in input_before_removal:
+      input_name = re.sub(r"^\^", "", full_input_name)
+      if input_name in names_to_remove:
+        continue
+      new_node.input.append(full_input_name)
+    nodes_after_removal.append(new_node)
+
+  types_to_splice = {"Identity": True}
+  control_input_names = set()
+  node_names_with_control_input = set()
+  node_in_colocated = set()
+
+  for node in nodes_after_removal:
+    for node_input in node.input:
+      if "^" in node_input:
+        control_input_names.add(node_input.replace("^", ""))
+        node_names_with_control_input.add(node.name)
+    # Prevent colocated nodes from being lost.
+    if "_class" in node.attr:
+      for colocated_node_name in node.attr["_class"].list.s:
+        node_in_colocated.add(_get_colocated_node_name(colocated_node_name))
+
+  names_to_splice = {}
+  for node in nodes_after_removal:
+    if node.op in types_to_splice:
+      if node.name in node_in_colocated:
+        continue
+      # We don't want to remove nodes that have control edge inputs, because
+      # they might be involved in subtle dependency issues that removing them
+      # will jeopardize.
+      if node.name not in node_names_with_control_input:
+        names_to_splice[node.name] = node.input[0]
+
+  # We also don't want to remove nodes which are used as control edge inputs.
+  names_to_splice = {name: value for name, value in names_to_splice.items()
+                     if name not in control_input_names}
+
+  nodes_after_splicing = []
+  for node in nodes_after_removal:
+    if node.name in names_to_splice:
+      continue
+    new_node = node_def_pb2.NodeDef()
+    new_node.CopyFrom(node)
+    input_before_removal = node.input
+    del new_node.input[:]
+    for full_input_name in input_before_removal:
+      input_name = re.sub(r"^\^", "", full_input_name)
+      while input_name in names_to_splice:
+        full_input_name = names_to_splice[input_name]
+        input_name = re.sub(r"^\^", "", full_input_name)
+      new_node.input.append(full_input_name)
+    nodes_after_splicing.append(new_node)
+
+  output_graph = graph_pb2.GraphDef()
+  output_graph.node.extend(nodes_after_splicing)
+  return output_graph
+
+def _get_colocated_node_name(colocated_node_name):
+  """Decodes colocated node name and returns it without loc:@ prepended."""
+  colocated_node_decoded = colocated_node_name.decode("utf-8")
+  if colocated_node_decoded.startswith("loc:@"):
+    return colocated_node_decoded[5:]
+  return colocated_node_decoded
 
 def freeze_session(model_path=None,clear_devices=True):
     print(f'converting h5 model to pb model for model_path={model_path}')
@@ -20,8 +118,8 @@ def freeze_session(model_path=None,clear_devices=True):
         print("input_names",input_names)
         input_graph_def = graph.as_graph_def()
         # for node in input_graph_def.node:
-        #     print('node:', node.name)
-        print("len node1",len(input_graph_def.node))
+        #     print('         node:', node.name)
+        # print("length of node1",len(input_graph_def.node))
         if clear_devices:
             for node in input_graph_def.node:
                 node.device = ""
@@ -29,10 +127,11 @@ def freeze_session(model_path=None,clear_devices=True):
                                                       output_names)
         
         outgraph = tf.compat.v1.graph_util.remove_training_nodes(frozen_graph)#去掉与推理无关的内容
+        # outgraph=remove_dropout_nodes(outgraph)
         # print("##################################################################")
-        # for node in outgraph.node:
-        #     print('node:', node.name)
-        # print("length of  node",len(outgraph.node))
+        for node in outgraph.node:
+            print('node:', node.name)
+        print("length of  node",len(outgraph.node))
         (filepath,filename) = os.path.split(model_path)
         # logdir= "./2xpb/"
         from pathlib import Path
