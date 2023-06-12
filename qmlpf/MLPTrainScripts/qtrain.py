@@ -22,6 +22,8 @@ import time
 import os
 
 import argparse
+
+import numpy as np
 from tensorflow.keras import optimizers
 
 from qmlpf.MLPTrainScripts.util import my_logger, yes_or_no
@@ -71,7 +73,7 @@ MODEL_DIR = 'models' # where models and plots are saved
 # DATASET_DIR='training_data'
 # DATASET_DIR='g:/Downloads/particles/'
 # DATASET_DIR='training_data/particles-real-noise-10-100pps'
-DATASET_DIR='training_data/particles-slow-real-noise'
+DATASET_DIR='training_data/particles-combined'
 # dataset location
 # trainfilepath = '../2xTrainingDataDND21train'
 # testfilepath = '../2xTrainingDataDND21test'
@@ -80,41 +82,38 @@ DATASET_DIR='training_data/particles-slow-real-noise'
 trainfilepath = os.path.join(DATASET_DIR,'train')
 testfilepath = os.path.join(DATASET_DIR,'test')
 
-# MLP params
-# hidden = int(sys.argv[1])
-# resize = int(sys.argv[2])
-# epochs = int(sys.argv[3])
-# csvfilepath = sys.argv[4]
+TRAINING_SET_PATCH_SIZE = 25 # size of actual recorded patches from jAER NoiseTesterFilter
+CSVINPUTLEN = TRAINING_SET_PATCH_SIZE * TRAINING_SET_PATCH_SIZE
 
 num_hidden_layers=1 # use 1 for single hidden layer, 0 for perceptron
-num_hidden_units = 500 # number of units in each hidden layer
-actual_patch_size = 15 # size of input patches to MLP resize*resize, should be odd integer
+num_hidden_units = 100 # number of units in each hidden layer
+actual_patch_size = 17 # size of input patches to MLP resize*resize, should be odd integer
 # tau = 100000 # 300ms if use exp decay for preprocessing
 tau_ms = 1000  # time window for decay of time surface. Features to be filtered in should fit in the actual_patch_size window during this duration
-
+encodemethod =  'timesurface' # 'cnn' # 'timesurface' # how to encode the timestamp input features, 'timesurface' for published float or quantized float time surface, 'bin' for binarized, 'lbb" for relative median method
 
 if actual_patch_size%2==0:
-    log.error(f'actual_patch_size ({actual_patch_size}) should be odd')
-    quit(1)
+    raise ValueError(f'actual_patch_size ({actual_patch_size}) should be odd')
+elif actual_patch_size>TRAINING_SET_PATCH_SIZE:
+    raise ValueError(f'maximum actual_patch_size ({actual_patch_size}) is {TRAINING_SET_PATCH_SIZE}')
 
 # training params
 # set SNR according to dataset signal and noise event counts, reported at end of recording CSV file from NTF in jAER
-SNR= 0.0761 # particles-slow-real-noise
-# SRN= 0.465 # particles-real-noise-10-100pps
+# SNR= 0.0761 # particles-slow-real-noise
+# SNR= 0.465 # particles-real-noise-10-100pps
+SNR= (0.0761+.465)/2 # particles-slow-real-noise
 # SNR= 1. / 100 # ratio of signal events to noise events in dataset. Set to 1 for original balanced DND21 paper; set to other values for e.g. high noise rate and low signal rate; see model.compile below
 # you can get this ratio at end of output of CSV file from jAER NoiseTesterFilter; See ReadMe.md
 epochs = 20
 learning_rate = 0.0005
 batch_size = 500 # training batch size
-dropout=0.25 # TODO we cannot current use dropout because it results in a datatype 21 that jAER cannot recognize with java tf1 1.5.0
-patchsize = 25 # size of actual recorded patches from jAER NoiseTesterFilter
-csvinputlen = patchsize * patchsize
-middle = int(csvinputlen / 2)
+dropout=0 # TODO we cannot current use dropout because it results in a datatype 21 that jAER cannot recognize with java tf1 1.5.0
 
-print(f'training MLP nodel with \n'
-      f'{num_hidden_layers} hidden layers\n'
-      f'{num_hidden_units} hidden units per layer\n'
-      f'{actual_patch_size}x{actual_patch_size} input patch\n'
+print(f'training nodel with \n'
+      f'hidden layers: {num_hidden_layers}\n'
+      f'hidden units per layer: {num_hidden_units} \n'
+      f'input patch size: {actual_patch_size}x{actual_patch_size}\n'
+      f'time surface encoding method: {encodemethod}'
       f'assuming tau_ms={tau_ms}\n'
       f'using training data from {trainfilepath}\n'
       f'using batch size {batch_size}, dropout={dropout}, learning rate {learning_rate}, and maximum of {epochs} epochs,\n'
@@ -125,6 +124,8 @@ if os.name!='nt':
     ok=yes_or_no('Are these parameters what you intend?', timeout=10) # timeout does not work on windows, user nust confirm
     if not ok:
         quit(0)
+else:
+    time.sleep(15)
 
 start_time=time.time()
 
@@ -210,13 +211,14 @@ class LossHistory(Callback):
 
 import math
 
-def lbppreprocessingresize(allfeatures, resize, targetEventTS, targetEventP): # auc 0.85/0.80  # TODO what does this do?
+def lbppreprocessingresize(allfeatures, resize, targetEventTS, targetEventP): # auc 0.85/0.80
+    """ binarized by median relative timestamp, if older than median set to zero, if younger set to 1 """
 
     # print(features.shape)
     # print(features)
     # print(allfeatures.shape, targetEventTS.shape, targetEventP.shape)
-    absTS = allfeatures[:,:csvinputlen]
-    polarity = allfeatures[:,csvinputlen:]
+    absTS = allfeatures[:, :CSVINPUTLEN]
+    polarity = allfeatures[:, CSVINPUTLEN:]
     
     features = absTS#.transpose()
 
@@ -225,71 +227,58 @@ def lbppreprocessingresize(allfeatures, resize, targetEventTS, targetEventP): # 
     # print(featuresdiff)
     featuresNormed = featuresNormed.astype(np.int)
 
-    
     # crop
-    features = featuresNormed.reshape(featuresNormed.shape[0], patchsize, patchsize)
-    margin = int((patchsize - resize) / 2)
-    cropend = patchsize - margin
+    features = featuresNormed.reshape(featuresNormed.shape[0], TRAINING_SET_PATCH_SIZE, TRAINING_SET_PATCH_SIZE)
+    margin = int((TRAINING_SET_PATCH_SIZE - resize) / 2)
+    cropend = TRAINING_SET_PATCH_SIZE - margin
     features = features[:,margin:cropend, margin:cropend]
     features = features.reshape(features.shape[0],resize * resize)
 
-    polarity = polarity.reshape(polarity.shape[0],patchsize, patchsize)
-    margin = int((patchsize - resize) / 2)
-    cropend = patchsize - margin
+    polarity = polarity.reshape(polarity.shape[0], TRAINING_SET_PATCH_SIZE, TRAINING_SET_PATCH_SIZE)
+    margin = int((TRAINING_SET_PATCH_SIZE - resize) / 2)
+    cropend = TRAINING_SET_PATCH_SIZE - margin
     channelP = polarity[:,margin:cropend, margin:cropend]
     channelP = channelP.reshape(channelP.shape[0], resize * resize)
     channelP[features==0] = 0 # set the polarity to be 0 if the event is too old, which means the ts features are 0
     channelP[:,int(resize*resize/2)] = targetEventP # ensure the center location has the classified event's polarity
-    
 
     features2 = np.hstack((features,channelP))
     # print(features2.shape)
     return features2
 
 
-def binpreprocessingresize(allfeatures, resize, targetEventTS, targetEventP): # TODO what is this for?
+def binpreprocessingresize(allfeatures, resize, targetEventTS, targetEventP):
+    """Binarized input patch
+    """
     # print(features.shape)
     # print(features)
     # print(allfeatures.shape, targetEventTS.shape, targetEventP.shape)
-    absTS = allfeatures[:,:csvinputlen]
-    polarity = allfeatures[:,csvinputlen:]
-    
-
-
+    absTS = allfeatures[:, :CSVINPUTLEN]
+    polarity = allfeatures[:, CSVINPUTLEN:]
     features = absTS#.transpose()
     featuresdiff = [features[i,:] - targetEventTS[i] for i in range(len(features))]
     # print(featuresdiff)
-
-
-
-    
     featuresdiff = np.array(featuresdiff, dtype=int)
     featuresdiff = featuresdiff/1000
     featuresdiff = featuresdiff.astype(int)
-
-    featuresNormed = np.abs(featuresdiff) < tau_ms
+    featuresNormed = np.abs(featuresdiff) < tau_ms # binarized time surface, 1 if event in NNb is younger than tau, otherwise zero
     featuresNormed = featuresNormed.astype(int)
 
-    # featuresNormed = (tau - np.abs(featuresdiff)) * 1.0 / tau
-    # featuresNormed = np.clip(featuresNormed, 0, 1)
-    # featuresNormed[featuresNormed > 0] = 1 # bin
-
     # crop
-    features = featuresNormed.reshape(featuresNormed.shape[0], patchsize, patchsize)
-    margin = int((patchsize - resize) / 2)
-    cropend = patchsize - margin
+    features = featuresNormed.reshape(featuresNormed.shape[0], TRAINING_SET_PATCH_SIZE, TRAINING_SET_PATCH_SIZE)
+    margin = int((TRAINING_SET_PATCH_SIZE - resize) / 2)
+    cropend = TRAINING_SET_PATCH_SIZE - margin
     features = features[:,margin:cropend, margin:cropend]
     features = features.reshape(features.shape[0],resize * resize)
 
-    polarity = polarity.reshape(polarity.shape[0],patchsize, patchsize)
-    margin = int((patchsize - resize) / 2)
-    cropend = patchsize - margin
+    polarity = polarity.reshape(polarity.shape[0], TRAINING_SET_PATCH_SIZE, TRAINING_SET_PATCH_SIZE)
+    margin = int((TRAINING_SET_PATCH_SIZE - resize) / 2)
+    cropend = TRAINING_SET_PATCH_SIZE - margin
     channelP = polarity[:,margin:cropend, margin:cropend]
     channelP = channelP.reshape(channelP.shape[0], resize * resize)
     channelP[features==0] = 0 # set the polarity to be 0 if the event is too old, which means the ts features are 0
     channelP[:,int(resize*resize/2)] = targetEventP # ensure the center location has the classified event's polarity
     
-
     features2 = np.hstack((features,channelP))
     # print(features2.shape)
     return features2
@@ -298,51 +287,34 @@ def cnnpreprocessingresize(allfeatures, resize, targetEventTS, targetEventP):
     # print(features.shape)
     # print(features)
     # print(allfeatures.shape, targetEventTS.shape, targetEventP.shape)
-    absTS = allfeatures[:,:csvinputlen]
-    polarity = allfeatures[:,csvinputlen:]
+    absTS = allfeatures[:, :CSVINPUTLEN].reshape(-1, TRAINING_SET_PATCH_SIZE, TRAINING_SET_PATCH_SIZE)
+    polarity = allfeatures[:, CSVINPUTLEN:].reshape(-1, TRAINING_SET_PATCH_SIZE, TRAINING_SET_PATCH_SIZE) # reshape to 2d batchsize*25x25
 
-    features = absTS
-    featuresdiff = [features[i,:] - targetEventTS[i] for i in range(len(features))]
+    dt_us = np.array([absTS[i,:] - targetEventTS[i] for i in range(len(absTS[:]))]) # compute dt for timesstamps relative to current event
     # print(featuresdiff)
 
-    featuresdiff = np.array(featuresdiff, dtype=int)
-    featuresdiff = featuresdiff/1000
-    featuresdiff = featuresdiff.astype(int)
-
-    featuresNormed = np.abs(featuresdiff) < tau_ms
-    featuresNormed = featuresNormed.astype(int)
-
-    # featuresNormed = (tau - np.abs(featuresdiff)) * 1.0 / tau
-    # featuresNormed = np.clip(featuresNormed, 0, 1)
-    # featuresNormed[featuresNormed > 0] = 1 # bin
+    ts_normed = (tau_ms - np.abs(dt_us/1000.)) * (1.0 / float(tau_ms))
+    ts_normed = np.clip(ts_normed, 0, 1)
 
     # crop
-    features = featuresNormed.reshape(featuresNormed.shape[0], patchsize, patchsize)
-    margin = int((patchsize - resize) / 2)
-    cropend = patchsize - margin
-    features = features[:,margin:cropend, margin:cropend]
-    features = features.reshape(features.shape[0],resize * resize)
+    margin = int((TRAINING_SET_PATCH_SIZE - resize) / 2)
+    cropend = TRAINING_SET_PATCH_SIZE - margin
+    ts_normed = ts_normed[:,margin:cropend, margin:cropend]
 
-    polarity = polarity.reshape(polarity.shape[0],patchsize, patchsize)
-    margin = int((patchsize - resize) / 2)
-    cropend = patchsize - margin
     channelP = polarity[:,margin:cropend, margin:cropend]
-    channelP = channelP.reshape(channelP.shape[0], resize * resize)
-    channelP[features==0] = 0 # set the polarity to be 0 if the event is too old, which means the ts features are 0
-    channelP[:,int(resize*resize/2)] = targetEventP # ensure the center location has the classified event's polarity
+    channelP[ts_normed==0] = 0 # set the polarity to be 0 if the event is too old, which means the ts features are 0
 
-    features2 = np.hstack((features,channelP))
-    features2 = features2.reshape((-1,resize,resize,2))
-    print(f'shape of CNN input: {features2.shape}')
-    return features2
+    cnn_input = np.stack((ts_normed,channelP), axis=3)
+    # log.debug(f'shape of CNN input: {features2.shape}')
+    return cnn_input
 
 
-def preprocessingresize(allfeatures, resize, targetEventTS, targetEventP):
+def preprocessingresize(allfeatures, resize, targetEventTS, targetEventP): # resizes input patch to resize * resize
     # print(features.shape)
     # print(features)
     # print(allfeatures.shape, targetEventTS.shape, targetEventP.shape)
-    absTS = allfeatures[:,:csvinputlen]
-    polarity = allfeatures[:,csvinputlen:]
+    absTS = allfeatures[:, :CSVINPUTLEN]
+    polarity = allfeatures[:, CSVINPUTLEN:]
     
     features = absTS#.transpose()
     # print(features.shape, polarity.shape, targetEventTS.shape)
@@ -367,15 +339,15 @@ def preprocessingresize(allfeatures, resize, targetEventTS, targetEventP):
     # featuresNormed = featuresNormed.transpose()
 
     # crop
-    features = featuresNormed.reshape(featuresNormed.shape[0], patchsize, patchsize)
-    margin = int((patchsize - resize) / 2)
-    cropend = patchsize - margin
+    features = featuresNormed.reshape(featuresNormed.shape[0], TRAINING_SET_PATCH_SIZE, TRAINING_SET_PATCH_SIZE)
+    margin = int((TRAINING_SET_PATCH_SIZE - resize) / 2)
+    cropend = TRAINING_SET_PATCH_SIZE - margin
     features = features[:,margin:cropend, margin:cropend]
     features = features.reshape(features.shape[0],resize * resize)
 
-    polarity = polarity.reshape(polarity.shape[0],patchsize, patchsize)
-    margin = int((patchsize - resize) / 2)
-    cropend = patchsize - margin
+    polarity = polarity.reshape(polarity.shape[0], TRAINING_SET_PATCH_SIZE, TRAINING_SET_PATCH_SIZE)
+    margin = int((TRAINING_SET_PATCH_SIZE - resize) / 2)
+    cropend = TRAINING_SET_PATCH_SIZE - margin
     channelP = polarity[:,margin:cropend, margin:cropend]
     channelP = channelP.reshape(channelP.shape[0], resize * resize)
     channelP[features==0] = 0 # set the polarity to be 0 if the event is too old, which means the ts features are 0
@@ -386,8 +358,8 @@ def preprocessingresize(allfeatures, resize, targetEventTS, targetEventP):
     # print(features2.shape)
     return features2
 
-def preprocessing(features, targetEventTS):
-    middle = int(patchsize * patchsize / 2)
+def preprocessing(features, targetEventTS): # assumes that MLP input is full logged CSV patch of 25x25
+    middle = int(TRAINING_SET_PATCH_SIZE * TRAINING_SET_PATCH_SIZE / 2)
     features = features.transpose()
     # normalization
     featuresdiff = features - targetEventTS
@@ -419,7 +391,7 @@ def getgeneratorbatches(files): # TODO not used anymore
                     encoding = "utf_8_sig"
                 else:
                     encoding = "utf_8"
-                df = pd.read_csv(file_,usecols=[0] + [i for i in range(3,5+csvinputlen*2)], header=0, )
+                df = pd.read_csv(file_, usecols=[0] + [i for i in range(3, 5 + CSVINPUTLEN * 2)], header=0, )
                 # df.fillna(0)
                 
                 zero = len(df[df.iloc[:,2] == 0])
@@ -444,6 +416,11 @@ def getgeneratorbatches(files): # TODO not used anymore
         return sumtrainbatches   
 
 def mygenerator(files,mode,encodemethod):
+    """ Generate input patches in batches for the DNN
+    :param files: list of (maybe compressed with xz) CSV files
+    :param mode: not used
+    :param encodemethod: how to process the time surface
+    """
     log.debug('starting data generator')
     while 1:
         # print('loop generator')
@@ -459,7 +436,7 @@ def mygenerator(files,mode,encodemethod):
                     encoding = "utf_8"
                 print(f' loading {file_}')
                 try:
-                    df = pd.read_csv(file_,usecols=[0] + [i for i in range(3,5+csvinputlen*2)], header=0, comment='#')
+                    df = pd.read_csv(file_, usecols=[0] + [i for i in range(3, 5 + CSVINPUTLEN * 2)], header=0, comment='#')
                 except Exception as e:
                     log.warning(f'got exception trying to read {file_}: {e}')
                     continue
@@ -476,26 +453,29 @@ def mygenerator(files,mode,encodemethod):
                     # print(m_data.shape,m_data[:10])
                     m_data = m_data.astype('float')
                     # print(m_data.shape)
-                    if patchsize >= actual_patch_size:
+                    if TRAINING_SET_PATCH_SIZE > actual_patch_size:
+                        # come here if the patch is smaller than the CSV recorded patch
                         # sample = {'y': m_data[2], 'x': preprocessingresize(m_data[3:3+csvinputlen*2], resize, m_data[1], m_data[0])} # crop the TI patch according to the given size
                         y = m_data[:,2] # this is the ground truth target class (0=noise 1=signal)
                         
                         # print(y.shape)
-                        if encodemethod == 'bin':
-                            x = binpreprocessingresize(m_data[:,3:3+csvinputlen*2], actual_patch_size, m_data[:, 1], m_data[:, 0])
+                        if encodemethod == 'bin': # fixed point input patche processing
+                            x = binpreprocessingresize(m_data[:,3:3 + CSVINPUTLEN * 2], actual_patch_size, m_data[:, 1], m_data[:, 0])
                         elif encodemethod == 'lbp':
-                            x = lbppreprocessingresize(m_data[:,3:3+csvinputlen*2], actual_patch_size, m_data[:, 1], m_data[:, 0])
+                            x = lbppreprocessingresize(m_data[:,3:3 + CSVINPUTLEN * 2], actual_patch_size, m_data[:, 1], m_data[:, 0])
                         elif encodemethod=='cnn':
-                            x = cnnpreprocessingresize(m_data[:,3:3+csvinputlen*2], actual_patch_size, m_data[:, 1], m_data[:, 0])
+                            x = cnnpreprocessingresize(m_data[:,3:3 + CSVINPUTLEN * 2], actual_patch_size, m_data[:, 1], m_data[:, 0])
+                        elif encodemethod=='timesurface': # floating point input patch time surface preprocessing
+                            x = preprocessingresize(m_data[:,3:3 + CSVINPUTLEN * 2], actual_patch_size, m_data[:, 1], m_data[:, 0])
                         else:
-                            x = preprocessingresize(m_data[:,3:3+csvinputlen*2], actual_patch_size, m_data[:, 1], m_data[:, 0])
+                            raise ValueError(f'unknown time surface encoding mode {encodemethod}')
 
                         # print(y.shape,y[:10])
                         # print(x.shape,x[:10])
                     else:
                         # sample = {'y': m_data[:,4], 'x': preprocessing(m_data[:,5:5+csvinputlen*2], m_data[:,3])}
                         y = m_data[:,4]
-                        x = preprocessing(m_data[:,5:5+csvinputlen*2], m_data[:,3])
+                        x = preprocessing(m_data[:,5:5 + CSVINPUTLEN * 2], m_data[:, 3])
                     # if self.transform:
                     #     sample = self.transform(m_data)
                     
@@ -515,7 +495,7 @@ def splittraintest(csvdir, splitratio): # TODO not used now
         np_array_list = []
         for file_ in allFiles:
             print(file_)
-            df = pd.read_csv(file_,usecols=[0] + [i for i in range(3,5+csvinputlen*2)], header=0) # might change if the collecting code change
+            df = pd.read_csv(file_, usecols=[0] + [i for i in range(3, 5 + CSVINPUTLEN * 2)], header=0) # might change if the collecting code change
             np_array_list.append(df.values)
 
         # read all csv files in a folder to one wpndas frame
@@ -566,8 +546,9 @@ def build_mlp_model(patch_size, num_hidden_units, num_hidden_layers=1, output_bi
                          bias_initializer=output_bias)(x)
         
         model = Model(inputs, x)
+        return model
 
-def build_cnn_model(patch_size, num_hidden_units, num_hidden_layers=1, output_bias=None, dropout=0.5): # https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
+def build_cnn_model(patch_size, output_bias=None, dropout=0.5): # https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
     if output_bias is not None:
         output_bias = tf.keras.initializers.Constant(output_bias)
     model = models.Sequential()
@@ -576,6 +557,7 @@ def build_cnn_model(patch_size, num_hidden_units, num_hidden_layers=1, output_bi
     model.add(layers.Conv2D(32, (3, 3), activation='relu'))
     model.add(layers.MaxPooling2D((2, 2)))
     model.add(layers.Flatten())
+    model.add(layers.Dense(32, activation='relu',bias_initializer=output_bias))
     model.add(layers.Dense(1, activation='sigmoid',bias_initializer=output_bias))
     return model
 
@@ -666,14 +648,15 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, 
         keras.metrics.TrueNegatives(name='tn'),
         keras.metrics.FalseNegatives(name='fn'),
         keras.metrics.BinaryAccuracy(name='accuracy'),
-        keras.metrics.Precision(name='precision'),
-        keras.metrics.Recall(name='recall'),
-        keras.metrics.AUC(name='auc'),
-        keras.metrics.AUC(name='prc', curve='PR'),  # precision-recall curve
+        # keras.metrics.Precision(name='precision'),
+        # keras.metrics.Recall(name='recall'),
+        keras.metrics.AUC(name='auc',num_thresholds=2000),
+        # keras.metrics.AUC(name='prc', curve='PR'),  # precision-recall curve
     ]
 
-    encodemethod='bin' if mtype!='cnn' else 'cnn'
     prefix = ''
+    log.info(f'training {mtype} model')
+    model=None
     if mtype == 'double': # two hidden layer floating-point MLP
         model = qbuildDModel(patch_size, hidden)
         middlefix = 'DH'
@@ -686,9 +669,9 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, 
         middlefix = 'fH'
         prefix = 'float' + encodemethod + str(tau_ms) + 'tau' + str(bits) + 'bitaw' + str(repeat) +  middlefix + str(hidden) + '_linear_' + str(patch_size)
     elif mtype == 'cnn': # floating MLP with one hidden layer
-        model = build_cnn_model(patch_size=patch_size, num_hidden_units=num_hidden_units, num_hidden_layers=num_hidden_layers, output_bias=initial_bias, dropout=dropout)
+        model = build_cnn_model(patch_size=patch_size, output_bias=initial_bias, dropout=dropout)
         middlefix = 'cnn'
-        prefix = 'float' + encodemethod + str(tau_ms) + 'tau' + str(bits) + 'bitaw' + str(repeat) +  middlefix + str(hidden) + '_linear_' + str(patch_size)
+        prefix = 'float' + encodemethod + str(tau_ms) + 'tau' +  middlefix  + '_linear_' + str(patch_size)
     elif mtype == 'perceptron': # single layer pereception (no hidden layer)
         model = qbuildPerceptron(patch_size)
         middlefix = 'H'
@@ -699,7 +682,7 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, 
     Path(MODEL_DIR).mkdir(exist_ok=True)
     datestr = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M")
     model_name_base = os.path.join(MODEL_DIR, prefix + '-' + datestr)
-    print(f'will save model to files starting with {model_name_base}')
+    log.info(f'will save model to files starting with {model_name_base}')
     # Path(model_name_base).mkdir(exist_ok=True)
     # print(f'made folder {model_name_base} to save model data to')
 
@@ -708,14 +691,14 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, 
         # testx,testy = getxandy(testfiles[0])
         testgenerator = mygenerator(testfiles,0,encodemethod)
         
-        print('qbuild model...', prefix + '.h5')
+        log.info(f'building model...{prefix}.h5')
         optimizer = Adam(learning_rate=learning_rate)
         # model.compile(optimizer, loss='mean_squared_error', metrics=['accuracy']) # original loss used in DND21 paper with balanced signal and noise event counts
         # https://stackoverflow.com/questions/35155655/loss-function-for-class-imbalanced-binary-classifier-in-tensor-flow
 
 
         model.compile(
-            optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+            optimizer=optimizer,
             loss=loss_fn,
             metrics=METRICS
         )
@@ -733,7 +716,7 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, 
 
         filepath=os.path.join(MODEL_DIR,prefix + "-{epoch:02d}-{val_accuracy:.3f}.h5")
         checkpoint = ModelCheckpoint(filepath,monitor='val_accuracy',mode='max' ,save_best_only='True', save_weights_only='True', save_freq='epoch')
-        print(f'checkpoint={checkpoint}')
+        # print(f'checkpoint={checkpoint}')
 
         # checkpoint = ModelCheckpoint(filepath='mlpmodels',monitor='loss',mode='auto' ,save_best_only='True')
 
@@ -889,6 +872,7 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, 
     except Exception as e:
         print(f'could not convert h5 model to pb model; got: {e}')
 
+# main
 parser=argparse.ArgumentParser(description='trains MLPs for denoising DVS')
 # parser.add_argument('--train', action='store_true', help='train a model')
 parser.add_argument('--quantized', type=int, help='train quantized network with QUANTIZED bits of weight and state precision')
@@ -899,11 +883,6 @@ if args.quantized:
     if args.bits is None:
         log.error('--bits N is missing for --quantized')
         quit(1)
-
-# main part of script
-# if len(sys.argv)<3:
-#     print(f'need at least 3 arguments, e.g. "python qtrain.py 0 4" to train quantized net with 4-bit weights and states. See ReadMe.md')
-#     quit(1)
 
 from pathlib import Path
 trainfiles = glob.glob(str(Path(trainfilepath).joinpath('*.csv*'))) # trailing wildcard to read compressed csv files, e.g. xxx.csv.xz or xxx.csv
