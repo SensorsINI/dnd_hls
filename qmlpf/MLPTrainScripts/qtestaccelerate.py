@@ -89,7 +89,7 @@ epochs = 5
 
 # networkinputlen = resize * resize
 
-tau = 128#128#100000 # 300ms if use exp decay for preprocessing
+tau = 64#128#100000 # 300ms if use exp decay for preprocessing
 
 global prefix
 
