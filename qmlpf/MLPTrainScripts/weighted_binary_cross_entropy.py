@@ -54,4 +54,4 @@ def weighted_binary_crossentropy(pos_weight=1.):
         """
         return K.mean(_calculate_weighted_binary_crossentropy(y_true, y_pred), axis=-1)
 
-    return _weighted_binary_crossentropy
+    return _weighted_binary_crossentropy # note that calling weighted_binary_crossentropy() returns the *function* _weighted_binary_crossentropy

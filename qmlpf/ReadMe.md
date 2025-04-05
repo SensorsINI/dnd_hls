@@ -21,7 +21,7 @@ conda activate dnd_hls
 cd MLPTrainScipts
 pip install -r requirements.txt
 ```
- * Model can be trained using Tensorflow 2.11 on windows, but, Tensorflow 2.5 may be required to convert the trained MLP to .pb file for use in jAER. 
+ * Model can be trained using Tensorflow 2.11 on windows, and 2.11 is **required** to convert the trained MLP to .pb file for use in jAER. Later versions do not support the compatability mode with TF1 needed.
  * If tensorflow does not install or you have trouble using GPU, see https://www.tensorflow.org/install/pip
  * See [requirements.txt](MLPTrainScripts/requirements.txt).
 
@@ -60,10 +60,10 @@ The columns start with information about this event (polarity,x,y,t), then wheth
 #### Notes on CSV files
 1. Put the training CSV in one folder, e.g. _train_, and the test CSV in another folder, e.g. _test_.
 2. The CSV files can be compressed and do not need to be uncompressed for pandas read_csv; using .xz "Ultra" compression in 7-zip can result in 1% compression (100X smaller files) for these huge CSV files.
-2. Large CSV can (and must, otherwise pandas can cause BSOD in windows 10) be split by lines, e.g. this command splits into files each with 10000 events:
-3. ```split --verbose -l10000 --additional-suffix=.csv train/particles-100-60s-1Hz-1.csv particles-100-60s-1Hz-1-train part-100-```
-4. You can then use xv to compress each CSV: (-z means compress, -9 is high compression, -T 12 uses 12 threads, -v is verbose)
-5. ```xz -z -9 -T 12 -v part-100*.csv```
+2. Large CSV can (and must, otherwise pandas can cause BSOD in windows 10) be split by lines, e.g. this command splits *original.csv* into files named *partXX.csv* each with 10000 events:
+3. ```split --verbose -l10000 --additional-suffix=.csv original.csv part```
+4. You can then use xv to compress each CSV: (-z means compress, -9 is high compression, -T 0 uses all cores, -v is verbose, -4 is compromise between speed and compression; it compresses 60MB to 4.5MB)
+5. ```xz -z -4 -T 0 -v part*.csv```
 6. Split these xz files into _train_ and _test_ folders in ratio that you choose, e.g. 80% training.
 
 ### From v2e

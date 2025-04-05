@@ -12,6 +12,29 @@
 # see README.md for more information
 
 from __future__ import print_function
+import os
+
+## training/testing csv files here
+if os.name=='nt':
+    trainfilepath = 'G:/Downloads/2xTrainingDataDND21train'
+    testfilepath = 'G:/Downloads/2xTrainingDataDND21test'
+else:
+    trainfilepath = '/home/tobi/Downloads/2xTrainingDataDND21train'
+    testfilepath = '/home/tobi/Downloads/2xTrainingDataDND21test'
+
+## network parameters here
+num_hidden_layers=1 # use 1 for single hidden layer, 0 for perceptron
+num_hidden_units = 20 # number of units in each hidden layer
+actual_patch_size = 7 # size of input patches to MLP: actual_patch_size*actual_patch_size, should be odd integer. Can be up to 25x25 from default jAER NTF CSV output
+# tau = 100000 # 300ms if use exp decay for preprocessing
+tau_ms = 100  # time window for decay of time surface. Features to be filtered in should fit in the actual_patch_size window during this duration
+encodemethod =  'timesurface' # 'cnn' # 'timesurface' # how to encode the timestamp input features, 'timesurface' for published float or quantized float time surface, 'bin' for binarized, 'lbb" for relative median method
+
+SNR=1 #  1 for original balanced DND21 dataset. This *is* ratio of signal to noise events in dataset. 
+epochs = 10 # TODO increase
+learning_rate = 0.001
+batch_size = 500 # training batch size
+dropout=.5 # dropout allowed now in jAER with TF 1.5.0 by fixing toString() exception with try/catch in jAER in NTF commit 15.3.25
 
 import datetime
 from cmath import polar
@@ -19,14 +42,18 @@ import time
 
 # from numpy.core.numeric import load
 # np.random.seed(1337)
-import os
+import os, sys
 
 import argparse
 
 import numpy as np
-from tensorflow.keras import optimizers
+from tensorflow.keras import optimizers, initializers
 
-from qmlpf.MLPTrainScripts.util import my_logger, yes_or_no
+# following ma
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.dirname(SCRIPT_DIR))
+
+from util import my_logger, yes_or_no
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
@@ -37,16 +64,18 @@ os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 import tensorflow
 from tensorflow import keras
-from tensorflow.keras import layers, models
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Dense, Dropout
-from tensorflow.keras.callbacks import Callback
-from tensorflow.keras.optimizers import Adam
+from keras import layers, models
+from keras.models import Model
+from keras.layers import Input, Dense, Dropout
+from keras.callbacks import Callback
+from keras.optimizers import Adam
+from keras.initializers import Orthogonal
+
 import matplotlib.pyplot as plt
 from sklearn.metrics import f1_score, precision_score, recall_score,accuracy_score, confusion_matrix
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
-from tensorflow.keras.callbacks import ModelCheckpoint
+from keras.callbacks import ModelCheckpoint
 import os, glob
 import pandas as pd
 
@@ -56,6 +85,7 @@ import pandas as pd
 from qkeras import *
 from qkeras.utils import model_save_quantized_weights
 from weighted_binary_cross_entropy import weighted_binary_crossentropy
+from gabor_initializer_1d_patch import gabor_initializer_1d_patch
 
 from convertH5toPB import freeze_session # to save pb model
 log=my_logger(__name__)
@@ -79,57 +109,16 @@ DATASET_DIR='training_data/particles-combined'
 # testfilepath = '../2xTrainingDataDND21test'
 # trainfilepath = os.path.join(DATASET_DIR,'particles_train')
 # testfilepath = os.path.join(DATASET_DIR,'particles_test')
-trainfilepath = os.path.join(DATASET_DIR,'train')
-testfilepath = os.path.join(DATASET_DIR,'test')
+# trainfilepath = os.path.join(DATASET_DIR,'train')
+# testfilepath = os.path.join(DATASET_DIR,'test')
 
 TRAINING_SET_PATCH_SIZE = 25 # size of actual recorded patches from jAER NoiseTesterFilter
 CSVINPUTLEN = TRAINING_SET_PATCH_SIZE * TRAINING_SET_PATCH_SIZE
 
-num_hidden_layers=1 # use 1 for single hidden layer, 0 for perceptron
-num_hidden_units = 100 # number of units in each hidden layer
-actual_patch_size = 17 # size of input patches to MLP resize*resize, should be odd integer
-# tau = 100000 # 300ms if use exp decay for preprocessing
-tau_ms = 1000  # time window for decay of time surface. Features to be filtered in should fit in the actual_patch_size window during this duration
-encodemethod =  'timesurface' # 'cnn' # 'timesurface' # how to encode the timestamp input features, 'timesurface' for published float or quantized float time surface, 'bin' for binarized, 'lbb" for relative median method
-
-if actual_patch_size%2==0:
-    raise ValueError(f'actual_patch_size ({actual_patch_size}) should be odd')
-elif actual_patch_size>TRAINING_SET_PATCH_SIZE:
-    raise ValueError(f'maximum actual_patch_size ({actual_patch_size}) is {TRAINING_SET_PATCH_SIZE}')
-
-# training params
-# set SNR according to dataset signal and noise event counts, reported at end of recording CSV file from NTF in jAER
-# SNR= 0.0761 # particles-slow-real-noise
-# SNR= 0.465 # particles-real-noise-10-100pps
-SNR= (0.0761+.465)/2 # particles-slow-real-noise
-# SNR= 1. / 100 # ratio of signal events to noise events in dataset. Set to 1 for original balanced DND21 paper; set to other values for e.g. high noise rate and low signal rate; see model.compile below
-# you can get this ratio at end of output of CSV file from jAER NoiseTesterFilter; See ReadMe.md
-epochs = 20
-learning_rate = 0.0005
-batch_size = 500 # training batch size
-dropout=0 # TODO we cannot current use dropout because it results in a datatype 21 that jAER cannot recognize with java tf1 1.5.0
-
-print(f'training nodel with \n'
-      f'hidden layers: {num_hidden_layers}\n'
-      f'hidden units per layer: {num_hidden_units} \n'
-      f'input patch size: {actual_patch_size}x{actual_patch_size}\n'
-      f'time surface encoding method: {encodemethod}'
-      f'assuming tau_ms={tau_ms}\n'
-      f'using training data from {trainfilepath}\n'
-      f'using batch size {batch_size}, dropout={dropout}, learning rate {learning_rate}, and maximum of {epochs} epochs,\n'
-      f'    and class ratio signal to noise SNR {SNR:.3f}'
-      )
-
-if os.name!='nt':
-    ok=yes_or_no('Are these parameters what you intend?', timeout=10) # timeout does not work on windows, user nust confirm
-    if not ok:
-        quit(0)
-else:
-    time.sleep(15)
-
-start_time=time.time()
-
 global prefix
+
+
+
 
 def plot_confusion_matrix(cm, savename, title='Confusion Matrix'):
 
@@ -528,24 +517,38 @@ def qbuildDModel(resize, hidden):
         return model
 
 def build_mlp_model(patch_size, num_hidden_units, num_hidden_layers=1, output_bias=None, dropout=0.5): # https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
-    if output_bias is not None:
-        output_bias = tf.keras.initializers.Constant(output_bias)
-    networkinputlen = patch_size * patch_size
-    if patch_size > 0:
-        inputs = Input(shape=[networkinputlen*2, ], name='input')
-        x = Dense(num_hidden_units, input_shape=(networkinputlen * 2,), activation='relu', name='fc1')(inputs)
-        if dropout>0:
-            x = Dropout(dropout)(x)
+#     if output_bias is not None:
+#         output_bias = tf.keras.initializers.Constant(output_bias)
+#     networkinputlen = patch_size * patch_size
+#     if patch_size > 0:
+#         gabor_init = gabor_initializer_1d_patch(
+#             patch_height=patch_size,
+#             patch_width=patch_size,
+#             num_filters=num_hidden_units
+#         )
+#         inputs = Input(shape=[2*networkinputlen, ], name='input')
+#         # initializer=Orthogonal(shape=(patch_size,patch_size))
+#         x = Dense(num_hidden_units, input_shape=(networkinputlen * 2,), activation='relu', name='fc1', kernel_initializer=gabor_init)(inputs)
+#         if dropout>0:
+#             x = Dropout(dropout)(x)
 
-        for i in range(num_hidden_layers-1):
-            x = Dense(num_hidden_units, input_shape=(num_hidden_units,), activation='relu', name=f'fc{i+2}')(x)
-            if dropout > 0:
-                x = Dropout(dropout)(x)
+#         for i in range(num_hidden_layers-1):
+#             x = Dense(num_hidden_units, 
+#                       input_shape=(num_hidden_units,), 
+#                       activation='relu', 
+#                       name=f'fc{i+2}',
+#                       kernel_initializer=Orthogonal(),
+# )(x)
+#             if dropout > 0:
+#                 x = Dropout(dropout)(x)
 
-        x = Dense(1, activation='sigmoid', name='output',
-                         bias_initializer=output_bias)(x)
+#         x = Dense(1, activation='sigmoid', name='output',
+#                          bias_initializer=output_bias)(x)
         
-        model = Model(inputs, x)
+#         model = Model(inputs, x)
+        from mymlp import MyMLP
+        model = MyMLP(patch_size=patch_size,num_hidden_layers=1,num_hidden_units=num_hidden_units, dropout=dropout)
+        
         return model
 
 def build_cnn_model(patch_size, output_bias=None, dropout=0.5): # https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
@@ -633,13 +636,14 @@ def plot_roc_curve(y_true,y_score,prefix):
 # trainbatches = 2705#3842
 # testbatches = 784#2078#938
 def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, hidden, epochs, repeat, mtype, Train, bits, dropout=0.0, num_hidden_layers=1): # todo repeat same as num_hidden_layers
-    pos = SNR  # count of positive class
-    neg = 1 - SNR  # count of negative class
+    pos = 1/(1+1/SNR)  # count of positive class, i.e. if SNR=1, equal # signal and noise, then signal is half of total
+    neg = 1/(1+SNR)  # count of negative class
     total = pos + neg
-    weight_for_0 = (1 / neg) * (total) / 2.0
-    weight_for_1 = (1 / pos) * (total) / 2.0
+    weight_for_0 = (1+SNR)/2
+    weight_for_1 = (1+1/SNR)/2 # so that SNR=1 produces 1:1 weights
+    print(f'binary cross entropy weights for SNR={SNR:.3f} are signal:{weight_for_1:.3f} noise:{weight_for_0:.3f}')
     class_weight = {0: weight_for_0, 1: weight_for_1}
-    initial_bias = np.log(pos / neg)  # https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
+    initial_bias = np.log(SNR)  # https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
     loss_fn = weighted_binary_crossentropy(pos_weight=weight_for_1)
 
     METRICS = [
@@ -668,6 +672,7 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, 
         model = build_mlp_model(patch_size=patch_size, num_hidden_units=num_hidden_units, num_hidden_layers=num_hidden_layers, output_bias=initial_bias, dropout=dropout)
         middlefix = 'fH'
         prefix = 'float' + encodemethod + str(tau_ms) + 'tau' + str(bits) + 'bitaw' + str(repeat) +  middlefix + str(hidden) + '_linear_' + str(patch_size)
+
     elif mtype == 'cnn': # floating MLP with one hidden layer
         model = build_cnn_model(patch_size=patch_size, output_bias=initial_bias, dropout=dropout)
         middlefix = 'cnn'
@@ -683,6 +688,11 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, 
     datestr = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M")
     model_name_base = os.path.join(MODEL_DIR, prefix + '-' + datestr)
     log.info(f'will save model to files starting with {model_name_base}')
+    
+    if mtype=='mlp':
+        from plotmlpfkernels import plot_kernels
+        plot_kernels(model, model_name_base, 'kernels-initial.png')
+
     # Path(model_name_base).mkdir(exist_ok=True)
     # print(f'made folder {model_name_base} to save model data to')
 
@@ -740,9 +750,12 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, 
         history.loss_plot(model_name_base,'epoch', e0loss, e0acc, e0valloss, e0valacc)
 
         model_file_name = model_name_base+'-model.h5'
-        model.save(model_file_name)
-        quantized_weights_filename=model_name_base+'weights.h5'
-        model_save_quantized_weights(model, quantized_weights_filename)
+        model.export(model_name_base)
+        model.save(model_file_name) # export h5 file for converting to pb (but maybe loading from export would be better for making pb)
+        # quantized_weights_filename=model_name_base+'weights.h5'
+        # model_save_quantized_weights(model, quantized_weights_filename)
+
+        plot_kernels(model, model_name_base, 'kernels-final.png')
 
         all_weights = []
         for layer in model.layers:
@@ -758,7 +771,13 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, 
           for w, weight in enumerate(layer.get_weights()):
             print(layer.name, w, weight.shape)
 
-        print_qstats(model)
+        # print_qstats(model)
+        try:
+            freeze_session(model_path=None,model=model) # use existing model object to freeze it to pb
+            print(f'saved model as {model_file_name}')
+        except Exception as e:
+            print(f'could not convert h5 model to pb model; got: {e}')
+        
 
     else: # test model TODO update below code
         print('testing saved model on data')
@@ -866,41 +885,74 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, 
         plt.legend()
         plt.savefig(model_name_base + '_outputhist.pdf')
 
-    try:
-        freeze_session(model_file_name)
-        print(f'saved model as {model_file_name}')
-    except Exception as e:
-        print(f'could not convert h5 model to pb model; got: {e}')
 
-# main
-parser=argparse.ArgumentParser(description='trains MLPs for denoising DVS')
-# parser.add_argument('--train', action='store_true', help='train a model')
-parser.add_argument('--quantized', type=int, help='train quantized network with QUANTIZED bits of weight and state precision')
-parser.add_argument('--arch', choices=['perceptron','mlp','cnn'], help='type of network to train')
+if __name__=='__main__':
+    # main
+    parser=argparse.ArgumentParser(description='trains MLPs for denoising DVS')
+    # parser.add_argument('--train', action='store_true', help='train a model')
+    parser.add_argument('--quantized', type=int, help='train quantized network with QUANTIZED bits of weight and state precision')
+    parser.add_argument('--arch', choices=['perceptron','mlp','cnn'], help='type of network to train', default='mlp')
 
-args=parser.parse_args()
-if args.quantized:
-    if args.bits is None:
-        log.error('--bits N is missing for --quantized')
+    if actual_patch_size%2==0:
+        raise ValueError(f'actual_patch_size ({actual_patch_size}) should be odd')
+    elif actual_patch_size>TRAINING_SET_PATCH_SIZE:
+        raise ValueError(f'maximum actual_patch_size ({actual_patch_size}) is {TRAINING_SET_PATCH_SIZE}')
+
+
+    args=parser.parse_args()
+    if args.quantized:
+        if args.bits is None:
+            log.error('--bits N is missing for --quantized')
+            quit(1)
+            
+    # training params
+    # set SNR according to dataset signal and noise event counts, reported at end of recording CSV file from NTF in jAER
+    # e.g. INFO: closed CSV output file drTraining.csv with 2,945,421 events (1,372,048 signal events, 1,573,373 noise events, SNR=0.872
+    # java code is float snr = (float) csvSignalCount / (float) csvNoiseCount;
+    # this number is used to set the binary cross entropy weighting so that at discrimation threshold 0.5, the accuracy of signal and noise classification is balanced(?)
+    SNR=1 #  1 for original balanced DND21 dataset. This *is* ratio of signal to noise events in dataset. 
+    # SNR= 0.0761 # particles-slow-real-noise
+    # SNR= 0.465 # particles-real-noise-10-100pps
+    # SNR= (0.0761+.465)/2 # particles-slow-real-noise
+    # SNR= 1. / 100 # ratio of signal events to noise events in dataset. Set to 0.5 for original balanced DND21 paper; set to other values for e.g. high noise rate and low signal rate; see model.compile below
+    # you can get this ratio at end of output of CSV file from jAER NoiseTesterFilter; See ReadMe.md
+    print(f'\n*********\ntraining model with architecture {args.arch}\n'
+        f'hidden layers: {num_hidden_layers}\n'
+        f'hidden units per layer: {num_hidden_units} \n'
+        f'input patch size: {actual_patch_size}x{actual_patch_size}\n'
+        f'time surface encoding method: {encodemethod}\n'
+        f'assuming tau_ms={tau_ms}\n'
+        f'using training data from {trainfilepath}\n'
+        f'using batch size {batch_size}, dropout={dropout}, learning rate {learning_rate}, and maximum of {epochs} epochs,\n'
+        f'    and class ratio signal to noise SNR {SNR:.3f}'
+        )
+
+    if os.name!='nt':
+        ok=yes_or_no('Are these parameters what you intend?', timeout=2) # timeout does not work on windows, user nust confirm
+        if not ok:
+            quit(0)
+    else:
+        time.sleep(5)
+    
+    start_time=time.time()
+
+    from pathlib import Path
+    trainfiles = glob.glob(str(Path(trainfilepath).joinpath('*.csv*'))) # trailing wildcard to read compressed csv files, e.g. xxx.csv.xz or xxx.csv
+    testfiles = glob.glob(str(Path(testfilepath).joinpath('*.csv*'))) # trailing wildcard to read compressed csv files, e.g. xxx.csv.xz or xxx.csv
+    if len(trainfiles)==0 or len(testfiles)==0:
+        print(f'********there are no files in {trainfilepath} or in {testfilepath}; check trainfilepath and testfilepath variables and working folder')
         quit(1)
+    else:
+        print(f'** found {len(trainfiles)} training CSV files and {len(testfiles)} testing CSV files')
 
-from pathlib import Path
-trainfiles = glob.glob(str(Path(trainfilepath).joinpath('*.csv*'))) # trailing wildcard to read compressed csv files, e.g. xxx.csv.xz or xxx.csv
-testfiles = glob.glob(str(Path(testfilepath).joinpath('*.csv*'))) # trailing wildcard to read compressed csv files, e.g. xxx.csv.xz or xxx.csv
-if len(trainfiles)==0 or len(testfiles)==0:
-    print(f'there are no files in {trainfilepath} or in {testfilepath}; check trainfilepath and testfilepath variables and working folder')
-    quit(1)
-else:
-    print(f'** found {len(trainfiles)} training CSV files and {len(testfiles)} testing CSV files')
+    # todo enlarge to really run
+    trainbatches = batch_size #getgeneratorbatches(trainfiles) # todo very slow, replace with constants when running repeatedly
+    testbatches = batch_size/10 #getgeneratorbatches(testfiles)
+    print(f'batch size used for training={trainbatches}, for testing={testbatches}')
 
-# todo enlarge to really run
-trainbatches = batch_size #getgeneratorbatches(trainfiles) # todo very slow, replace with constants when running repeatedly
-testbatches = batch_size/10 #getgeneratorbatches(testfiles)
-print(f'batch size used for training={trainbatches}, for testing={testbatches}')
+    trainflag=True # set to false for model testing
 
-trainflag=True # set to false for model testing
+    trainFunction(trainfiles, testfiles, trainbatches, testbatches, actual_patch_size, num_hidden_units, epochs, 0, args.arch, trainflag, args.quantized, num_hidden_layers=num_hidden_layers, dropout=dropout)
 
-trainFunction(trainfiles, testfiles, trainbatches, testbatches, actual_patch_size, num_hidden_units, epochs, 0, args.arch, trainflag, args.quantized, num_hidden_layers=num_hidden_layers, dropout=dropout)
-
-end_time=time.time()
-print(f'total elapsed time {end_time-start_time:.1f} seconds')
+    end_time=time.time()
+    print(f'total elapsed time {end_time-start_time:.1f} seconds')
