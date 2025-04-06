@@ -1,4 +1,4 @@
-tensorflow>=2.5.0rc0
+tensorflow==2.11 # do NOT also install keras!  we use tf.keras, not standalone keras
 numpy>=1.16.5
 pyparser
 scipy>=1.4.1
@@ -8,7 +8,7 @@ pyasn1<0.5.0,>=0.4.6
 requests<3,>=2.21.0
 pyparsing
 pytest>=4.6.9
-tensorflow-model-optimization>=0.2.1
+# tensorflow-model-optimization>=0.2.1
 networkx>=2.1
 # prompt_toolkit is required by IPython.
 # IPython is required by keras-tuner.
@@ -20,4 +20,5 @@ scikit-learn>=0.23.1
 tqdm>=4.48.0
 matplotlib
 pandas
-easygui
+easygui # fileopenbox and diropenbox
+pypref # used for storing most recent file/folder for easygui browswers, etc.

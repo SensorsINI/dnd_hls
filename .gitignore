@@ -5,3 +5,12 @@ vivado_hls.log
 **/csim
 **/sim
 **/impl
+**/*.pyc
+qmlpf/MLPTrainScripts/training_data/2xTrainingDataDND21test/*
+qmlpf/MLPTrainScripts/training_data/2xTrainingDataDND21train/*
+**/*.csv.xz
+models/
+**/*.npy
+.idea/
+training_data/
+

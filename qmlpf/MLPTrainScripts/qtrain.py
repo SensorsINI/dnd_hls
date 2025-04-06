@@ -103,7 +103,7 @@ MODEL_DIR = 'models' # where models and plots are saved
 # DATASET_DIR='training_data'
 # DATASET_DIR='g:/Downloads/particles/'
 # DATASET_DIR='training_data/particles-real-noise-10-100pps'
-DATASET_DIR='training_data/particles-combined'
+# DATASET_DIR='training_data/particles-combined'
 # dataset location
 # trainfilepath = '../2xTrainingDataDND21train'
 # testfilepath = '../2xTrainingDataDND21test'
@@ -175,11 +175,11 @@ class LossHistory(Callback):
         self.val_loss['epoch'].append(logs.get('val_loss'))
         self.val_acc['epoch'].append(logs.get('val_accuracy'))
  
-    def loss_plot(self, prefix, loss_type, e0loss, e0acc, e0valloss, e0valacc):
+    def loss_plot(self, model_dir, loss_type, e0loss, e0acc, e0valloss, e0valacc):
 
         iters = range(len(self.losses[loss_type])+1)
-        np.save(prefix + 'loss.npy', np.array([e0loss] + self.losses[loss_type]))
-        np.save(prefix + 'acc.npy', np.array([e0acc] + self.accuracy[loss_type]))
+        # np.save(model_dir + 'loss.npy', np.array([e0loss] + self.losses[loss_type]))
+        # np.save(model_dir + 'acc.npy', np.array([e0acc] + self.accuracy[loss_type]))
 
         plt.figure()
         # acc
@@ -196,7 +196,7 @@ class LossHistory(Callback):
         plt.ylabel('acc-loss')
         plt.legend(loc="upper right")
         
-        plt.savefig(prefix+'training.pdf')
+        plt.savefig(os.path.join(model_dir,'training.pdf'))
 
 import math
 
@@ -621,7 +621,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve
 import matplotlib.pyplot as plt
 
-def plot_roc_curve(y_true,y_score,prefix):
+def plot_roc_curve(y_true,y_score,model_dir):
     fpr,tpr,threshold = roc_curve(y_true,y_score,pos_label=1)
     auc = roc_auc_score(y_true,y_score)
     plt.xlabel('FPR')
@@ -629,7 +629,7 @@ def plot_roc_curve(y_true,y_score,prefix):
     plt.title('roc curve' + str(auc))
     plt.plot(fpr,tpr,color='b',linewidth=1)
     plt.plot([0,1],[0,1],'r--')
-    plt.savefig(prefix + '_roccurve.pdf')
+    plt.savefig(os.path.join(model_dir , 'roccurve.pdf'))
     plt.clf()
 
 
@@ -686,12 +686,14 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, 
     from pathlib import Path
     Path(MODEL_DIR).mkdir(exist_ok=True)
     datestr = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M")
-    model_name_base = os.path.join(MODEL_DIR, prefix + '-' + datestr)
-    log.info(f'will save model to files starting with {model_name_base}')
+    model_dir_name = os.path.join(MODEL_DIR, prefix + '-' + datestr)
+    Path(model_dir_name).mkdir(exist_ok=True)
+    
+    log.info(f'will save model to files in {model_dir_name}')
     
     if mtype=='mlp':
         from plotmlpfkernels import plot_kernels
-        plot_kernels(model, model_name_base, 'kernels-initial.png')
+        plot_kernels(model, model_dir_name, 'kernels-initial.png')
 
     # Path(model_name_base).mkdir(exist_ok=True)
     # print(f'made folder {model_name_base} to save model data to')
@@ -701,7 +703,7 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, 
         # testx,testy = getxandy(testfiles[0])
         testgenerator = mygenerator(testfiles,0,encodemethod)
         
-        log.info(f'building model...{prefix}.h5')
+        log.info(f'building model...{prefix}')
         optimizer = Adam(learning_rate=learning_rate)
         # model.compile(optimizer, loss='mean_squared_error', metrics=['accuracy']) # original loss used in DND21 paper with balanced signal and noise event counts
         # https://stackoverflow.com/questions/35155655/loss-function-for-class-imbalanced-binary-classifier-in-tensor-flow
@@ -747,15 +749,15 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, 
             verbose=1, workers=1, use_multiprocessing=False
         )
 
-        history.loss_plot(model_name_base,'epoch', e0loss, e0acc, e0valloss, e0valacc)
+        history.loss_plot(model_dir_name,'epoch', e0loss, e0acc, e0valloss, e0valacc)
 
-        model_file_name = model_name_base+'-model.h5'
-        model.export(model_name_base)
-        model.save(model_file_name) # export h5 file for converting to pb (but maybe loading from export would be better for making pb)
+        model.export(model_dir_name)
+        model_file_name = model_dir_name+'-model.h5'
+        model.save(os.path.join(model_dir_name,model_file_name)) # export h5 file for converting to pb (but maybe loading from export would be better for making pb)
         # quantized_weights_filename=model_name_base+'weights.h5'
         # model_save_quantized_weights(model, quantized_weights_filename)
 
-        plot_kernels(model, model_name_base, 'kernels-final.png')
+        plot_kernels(model, model_dir_name, 'kernels-final.png')
 
         all_weights = []
         for layer in model.layers:
@@ -836,7 +838,7 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, 
         rocauc = roc_auc_score(y_true,initpredictions)
         print(prefix,'auc',rocauc)
 
-        plot_roc_curve(y_true,initpredictions,model_name_base.replace('.h5',str(rocauc)))
+        plot_roc_curve(y_true,initpredictions,model_dir_name)
         # del model
         # return
         y_pred = (initpredictions > 0.5).astype(int)
@@ -883,7 +885,7 @@ def trainFunction(trainfiles, testfiles, trainbatches, testbatches, patch_size, 
         plt.hist(initpredictions, bins=20, label=histlabel)
         plt.xlim(0,1)
         plt.legend()
-        plt.savefig(model_name_base + '_outputhist.pdf')
+        plt.savefig(os.path.join(model_dir_name, 'outputhist.pdf'))
 
 
 if __name__=='__main__':
