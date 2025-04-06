@@ -14,3 +14,5 @@ models/
 .idea/
 training_data/
 
+.vscode/launch.json
+qmlpf/.vscode/launch.json
